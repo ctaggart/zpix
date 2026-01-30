@@ -4,11 +4,31 @@ A Zig port of stb_image focusing on PNG support with thumbnail and tiling capabi
 
 ## Features
 
-- PNG decoding (RGB and RGBA, 8-bit per channel)
+- Pure Zig PNG decoder and encoder (no C dependencies for core functionality)
 - Crop operations
 - Resize operations (bilinear interpolation)
 - Thumbnail generation (center crop + resize)
 - CLI tool for image processing
+
+## PNG Support
+
+### Supported
+
+| Feature | Decode | Encode |
+|---------|--------|--------|
+| RGB (8-bit) | Yes | Yes |
+| RGBA (8-bit) | Yes | Yes |
+| Grayscale (8-bit) | Yes | Yes |
+| Grayscale+Alpha (8-bit) | Yes | Yes |
+| Adam7 interlacing | Yes | No |
+| All filter types (None, Sub, Up, Average, Paeth) | Yes | None only |
+
+### Not Supported
+
+- Palette/indexed color (color type 3)
+- 16-bit depth
+- 1/2/4-bit depth
+- Ancillary chunks (gAMA, cHRM, sRGB, iCCP, tRNS)
 
 ## Building
 
