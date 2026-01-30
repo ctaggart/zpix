@@ -106,7 +106,7 @@ try file_writer.interface.flush();
 
 ### Streaming Operations
 
-Process images without intermediate file I/O:
+Process images through Reader/Writer (loads full image):
 
 ```zig
 // Crop: read PNG -> crop -> write PNG
@@ -118,6 +118,27 @@ try stbz.resizeStream(allocator, &reader, &writer, new_width, new_height);
 // Thumbnail: read PNG -> center crop -> resize -> write PNG
 try stbz.thumbnailStream(allocator, &reader, &writer, size);
 ```
+
+### Low-Memory Streaming (Row-by-Row)
+
+For large images, use row-by-row processing with O(width) memory instead of O(width × height):
+
+```zig
+// Crop with minimal memory (only row buffers allocated)
+try stbz.streamingCrop(allocator, &reader, &writer, x, y, width, height);
+
+// Resize with minimal memory
+try stbz.streamingResize(allocator, &reader, &writer, new_width, new_height);
+
+// Thumbnail with minimal memory
+try stbz.streamingThumbnail(allocator, &reader, &writer, size);
+```
+
+**Memory comparison (10000×10000 RGB image):**
+| API | Memory Usage |
+|-----|--------------|
+| `loadPngFile` + `crop` | ~300 MB |
+| `streamingCrop` | ~120 KB |
 
 ## Test Images
 

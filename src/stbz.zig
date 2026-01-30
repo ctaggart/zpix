@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 pub const image = @import("image.zig");
 pub const Image = image.Image;
 pub const png = @import("png.zig");
+pub const streaming = @import("streaming.zig");
 
 // Core Reader/Writer based functions
 pub const decodePng = png.decode;
@@ -16,7 +17,7 @@ pub const savePngFile = png.saveToFile;
 pub const savePngMemory = png.saveToMemory;
 
 // ============================================================================
-// Streaming Operations
+// Streaming Operations (full image in memory)
 // ============================================================================
 
 /// Read PNG from reader, crop, write PNG to writer
@@ -87,6 +88,28 @@ pub fn thumbnailStream(
     // Encode output
     try png.encode(allocator, &thumbnail, writer);
 }
+
+// ============================================================================
+// Low-Memory Streaming Operations (row-by-row processing)
+// ============================================================================
+
+/// Streaming crop with minimal memory (only row buffers)
+pub const streamingCrop = streaming.streamingCrop;
+
+/// Streaming resize with minimal memory
+pub const streamingResize = streaming.streamingResize;
+
+/// Streaming thumbnail with minimal memory
+pub const streamingThumbnail = streaming.streamingThumbnail;
+
+/// Row-by-row PNG reader
+pub const PngRowReader = streaming.PngRowReader;
+
+/// Row-by-row PNG writer
+pub const PngRowWriter = streaming.PngRowWriter;
+
+/// PNG header info
+pub const PngInfo = streaming.PngInfo;
 
 test {
     std.testing.refAllDecls(@This());
