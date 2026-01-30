@@ -60,24 +60,11 @@ const ChunkType = struct {
     const PLTE = [4]u8{ 'P', 'L', 'T', 'E' };
 };
 
-pub fn loadFromFile(allocator: Allocator, path: []const u8) !Image {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const data = try file.readToEndAlloc(allocator, 1024 * 1024 * 64); // 64MB max
-    defer allocator.free(data);
-
-    return loadFromMemory(allocator, data);
-}
-
-pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
-    var stream = std.io.fixedBufferStream(data);
-    const reader = stream.reader();
-
+/// Core decoder: reads PNG from any std.Io.Reader
+pub fn decode(allocator: Allocator, reader: *std.Io.Reader) !Image {
     // Verify PNG signature
-    var signature: [8]u8 = undefined;
-    _ = try reader.readAll(&signature);
-    if (!std.mem.eql(u8, &signature, &PNG_SIGNATURE)) {
+    const signature = try reader.takeArray(8);
+    if (!std.mem.eql(u8, signature, &PNG_SIGNATURE)) {
         return PngError.InvalidSignature;
     }
 
@@ -92,19 +79,18 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
 
     // Parse chunks
     while (true) {
-        const length = reader.readInt(u32, .big) catch break;
-        var chunk_type: [4]u8 = undefined;
-        _ = reader.readAll(&chunk_type) catch break;
+        const length = reader.takeInt(u32, .big) catch break;
+        const chunk_type = reader.takeArray(4) catch break;
 
-        if (std.mem.eql(u8, &chunk_type, &ChunkType.IHDR)) {
-            width = try reader.readInt(u32, .big);
-            height = try reader.readInt(u32, .big);
-            bit_depth = try reader.readByte();
-            const ct = try reader.readByte();
+        if (std.mem.eql(u8, chunk_type, &ChunkType.IHDR)) {
+            width = try reader.takeInt(u32, .big);
+            height = try reader.takeInt(u32, .big);
+            bit_depth = try reader.takeByte();
+            const ct = try reader.takeByte();
             color_type = std.meta.intToEnum(ColorType, ct) catch return PngError.UnsupportedColorType;
-            const compression = try reader.readByte();
-            const filter = try reader.readByte();
-            interlace = try reader.readByte();
+            const compression = try reader.takeByte();
+            const filter = try reader.takeByte();
+            interlace = try reader.takeByte();
             _ = compression;
             _ = filter;
 
@@ -124,19 +110,23 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
             };
 
             // Skip CRC
-            try reader.skipBytes(4, .{});
-        } else if (std.mem.eql(u8, &chunk_type, &ChunkType.IDAT)) {
-            const chunk_data = try allocator.alloc(u8, length);
-            defer allocator.free(chunk_data);
-            _ = try reader.readAll(chunk_data);
-            try idat_data.appendSlice(allocator, chunk_data);
+            try reader.discardAll(4);
+        } else if (std.mem.eql(u8, chunk_type, &ChunkType.IDAT)) {
+            // Read IDAT data in chunks to handle large compressed data
+            var remaining: usize = length;
+            while (remaining > 0) {
+                const to_read = @min(remaining, 4096);
+                const chunk_data = try reader.take(to_read);
+                try idat_data.appendSlice(allocator, chunk_data);
+                remaining -= to_read;
+            }
             // Skip CRC
-            try reader.skipBytes(4, .{});
-        } else if (std.mem.eql(u8, &chunk_type, &ChunkType.IEND)) {
+            try reader.discardAll(4);
+        } else if (std.mem.eql(u8, chunk_type, &ChunkType.IEND)) {
             break;
         } else {
             // Skip unknown chunk
-            try reader.skipBytes(length + 4, .{}); // data + CRC
+            try reader.discardAll(length + 4); // data + CRC
         }
     }
 
@@ -150,6 +140,23 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
     } else {
         return reconstructImage(allocator, raw_data, width, height, channels);
     }
+}
+
+/// Load PNG from file path (convenience wrapper)
+pub fn loadFromFile(allocator: Allocator, path: []const u8) !Image {
+    const file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    var buf: [8192]u8 = undefined;
+    var file_reader = file.reader(&buf);
+
+    return decode(allocator, &file_reader.interface);
+}
+
+/// Load PNG from memory buffer (convenience wrapper)
+pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
+    var reader: std.Io.Reader = .fixed(data);
+    return decode(allocator, &reader);
 }
 
 fn decompressZlib(allocator: Allocator, data: []const u8) ![]u8 {
@@ -312,46 +319,57 @@ fn paethPredictor(a: i32, b: i32, c: i32) u8 {
 // PNG Encoder
 // ============================================================================
 
+/// Core encoder: writes PNG to any std.Io.Writer
+pub fn encode(allocator: Allocator, img: *const Image, writer: *std.Io.Writer) !void {
+    // Write PNG signature
+    try writer.writeAll(&PNG_SIGNATURE);
+
+    // Write IHDR chunk
+    try writeIhdrChunk(writer, img.width, img.height, img.channels);
+
+    // Write IDAT chunk(s)
+    try writeIdatChunks(allocator, writer, img);
+
+    // Write IEND chunk
+    try writeIendChunk(writer);
+}
+
+/// Save PNG to file path (convenience wrapper)
 pub fn saveToFile(img: *const Image, path: []const u8) !void {
     const file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    const data = try saveToMemory(img.allocator, img);
-    defer img.allocator.free(data);
+    var buf: [8192]u8 = undefined;
+    var file_writer = file.writer(&buf);
 
-    try file.writeAll(data);
+    try encode(img.allocator, img, &file_writer.interface);
+    try file_writer.interface.flush();
 }
 
+/// Save PNG to memory buffer (convenience wrapper)
 pub fn saveToMemory(allocator: Allocator, img: *const Image) ![]u8 {
     var output: std.ArrayList(u8) = .empty;
     errdefer output.deinit(allocator);
 
-    // Write PNG signature
     try output.appendSlice(allocator, &PNG_SIGNATURE);
-
-    // Write IHDR chunk
-    try writeIhdrChunk(allocator, &output, img.width, img.height, img.channels);
-
-    // Write IDAT chunk(s)
-    try writeIdatChunks(allocator, &output, img);
-
-    // Write IEND chunk
-    try writeIendChunk(allocator, &output);
+    try writeIhdrChunkToList(allocator, &output, img.width, img.height, img.channels);
+    try writeIdatChunksToList(allocator, &output, img);
+    try writeIendChunkToList(allocator, &output);
 
     return output.toOwnedSlice(allocator);
 }
 
-fn writeChunk(allocator: Allocator, output: *std.ArrayList(u8), chunk_type: [4]u8, data: []const u8) !void {
+fn writeChunk(writer: *std.Io.Writer, chunk_type: [4]u8, data: []const u8) !void {
     // Length (4 bytes, big endian)
     var len_buf: [4]u8 = undefined;
     std.mem.writeInt(u32, &len_buf, @intCast(data.len), .big);
-    try output.appendSlice(allocator, &len_buf);
+    try writer.writeAll(&len_buf);
 
     // Chunk type (4 bytes)
-    try output.appendSlice(allocator, &chunk_type);
+    try writer.writeAll(&chunk_type);
 
     // Data
-    try output.appendSlice(allocator, data);
+    try writer.writeAll(data);
 
     // CRC32 (of chunk type + data)
     var crc = std.hash.Crc32.init();
@@ -359,37 +377,30 @@ fn writeChunk(allocator: Allocator, output: *std.ArrayList(u8), chunk_type: [4]u
     crc.update(data);
     var crc_buf: [4]u8 = undefined;
     std.mem.writeInt(u32, &crc_buf, crc.final(), .big);
-    try output.appendSlice(allocator, &crc_buf);
+    try writer.writeAll(&crc_buf);
 }
 
-fn writeIhdrChunk(allocator: Allocator, output: *std.ArrayList(u8), width: u32, height: u32, channels: u8) !void {
+fn writeIhdrChunk(writer: *std.Io.Writer, width: u32, height: u32, channels: u8) !void {
     var ihdr_data: [13]u8 = undefined;
 
-    // Width (4 bytes)
     std.mem.writeInt(u32, ihdr_data[0..4], width, .big);
-    // Height (4 bytes)
     std.mem.writeInt(u32, ihdr_data[4..8], height, .big);
-    // Bit depth (1 byte) - always 8
     ihdr_data[8] = 8;
-    // Color type (1 byte) - 0 for grayscale, 2 for RGB, 4 for grayscale+alpha, 6 for RGBA
     ihdr_data[9] = switch (channels) {
-        1 => 0, // grayscale
-        2 => 4, // grayscale + alpha
-        3 => 2, // RGB
-        4 => 6, // RGBA
+        1 => 0,
+        2 => 4,
+        3 => 2,
+        4 => 6,
         else => 2,
     };
-    // Compression method (1 byte) - always 0
     ihdr_data[10] = 0;
-    // Filter method (1 byte) - always 0
     ihdr_data[11] = 0;
-    // Interlace method (1 byte) - 0 for no interlace
     ihdr_data[12] = 0;
 
-    try writeChunk(allocator, output, ChunkType.IHDR, &ihdr_data);
+    try writeChunk(writer, ChunkType.IHDR, &ihdr_data);
 }
 
-fn writeIdatChunks(allocator: Allocator, output: *std.ArrayList(u8), img: *const Image) !void {
+fn writeIdatChunks(allocator: Allocator, writer: *std.Io.Writer, img: *const Image) !void {
     const stride = @as(usize, img.width) * @as(usize, img.channels);
 
     // Prepare filtered data (add filter byte 0 = None for each row)
@@ -401,8 +412,6 @@ fn writeIdatChunks(allocator: Allocator, output: *std.ArrayList(u8), img: *const
     while (y < img.height) : (y += 1) {
         const out_start = y * (stride + 1);
         const in_start = y * stride;
-
-        // Filter type 0 (None) for simplicity
         filtered[out_start] = 0;
         @memcpy(filtered[out_start + 1 ..][0..stride], img.data[in_start..][0..stride]);
     }
@@ -411,12 +420,68 @@ fn writeIdatChunks(allocator: Allocator, output: *std.ArrayList(u8), img: *const
     const compressed = try compressZlib(allocator, filtered);
     defer allocator.free(compressed);
 
-    // Write as single IDAT chunk (could split for large images)
-    try writeChunk(allocator, output, ChunkType.IDAT, compressed);
+    try writeChunk(writer, ChunkType.IDAT, compressed);
 }
 
-fn writeIendChunk(allocator: Allocator, output: *std.ArrayList(u8)) !void {
-    try writeChunk(allocator, output, ChunkType.IEND, &.{});
+fn writeIendChunk(writer: *std.Io.Writer) !void {
+    try writeChunk(writer, ChunkType.IEND, &.{});
+}
+
+// ArrayList-based versions for saveToMemory
+fn writeChunkToList(allocator: Allocator, output: *std.ArrayList(u8), chunk_type: [4]u8, data: []const u8) !void {
+    var len_buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &len_buf, @intCast(data.len), .big);
+    try output.appendSlice(allocator, &len_buf);
+    try output.appendSlice(allocator, &chunk_type);
+    try output.appendSlice(allocator, data);
+
+    var crc = std.hash.Crc32.init();
+    crc.update(&chunk_type);
+    crc.update(data);
+    var crc_buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &crc_buf, crc.final(), .big);
+    try output.appendSlice(allocator, &crc_buf);
+}
+
+fn writeIhdrChunkToList(allocator: Allocator, output: *std.ArrayList(u8), width: u32, height: u32, channels: u8) !void {
+    var ihdr_data: [13]u8 = undefined;
+    std.mem.writeInt(u32, ihdr_data[0..4], width, .big);
+    std.mem.writeInt(u32, ihdr_data[4..8], height, .big);
+    ihdr_data[8] = 8;
+    ihdr_data[9] = switch (channels) {
+        1 => 0,
+        2 => 4,
+        3 => 2,
+        4 => 6,
+        else => 2,
+    };
+    ihdr_data[10] = 0;
+    ihdr_data[11] = 0;
+    ihdr_data[12] = 0;
+    try writeChunkToList(allocator, output, ChunkType.IHDR, &ihdr_data);
+}
+
+fn writeIdatChunksToList(allocator: Allocator, output: *std.ArrayList(u8), img: *const Image) !void {
+    const stride = @as(usize, img.width) * @as(usize, img.channels);
+    const filtered_size = @as(usize, img.height) * (stride + 1);
+    const filtered = try allocator.alloc(u8, filtered_size);
+    defer allocator.free(filtered);
+
+    var y: usize = 0;
+    while (y < img.height) : (y += 1) {
+        const out_start = y * (stride + 1);
+        const in_start = y * stride;
+        filtered[out_start] = 0;
+        @memcpy(filtered[out_start + 1 ..][0..stride], img.data[in_start..][0..stride]);
+    }
+
+    const compressed = try compressZlib(allocator, filtered);
+    defer allocator.free(compressed);
+    try writeChunkToList(allocator, output, ChunkType.IDAT, compressed);
+}
+
+fn writeIendChunkToList(allocator: Allocator, output: *std.ArrayList(u8)) !void {
+    try writeChunkToList(allocator, output, ChunkType.IEND, &.{});
 }
 
 fn compressZlib(allocator: Allocator, data: []const u8) ![]u8 {

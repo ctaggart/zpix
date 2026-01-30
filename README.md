@@ -57,6 +57,8 @@ stbz thumbnail input.png thumb.png 128
 
 ## Library Usage
 
+### File-based API
+
 ```zig
 const stbz = @import("stbz");
 
@@ -71,6 +73,50 @@ defer cropped.deinit();
 // Resize
 var resized = try image.resize(new_width, new_height);
 defer resized.deinit();
+
+// Save
+try stbz.savePngFile(&resized, "output.png");
+```
+
+### Reader/Writer API
+
+For streaming and custom I/O sources:
+
+```zig
+const stbz = @import("stbz");
+
+// Decode from any std.Io.Reader
+var file = try std.fs.cwd().openFile("input.png", .{});
+defer file.close();
+var buf: [8192]u8 = undefined;
+var file_reader = file.reader(&buf);
+
+var image = try stbz.decodePng(allocator, &file_reader.interface);
+defer image.deinit();
+
+// Encode to any std.Io.Writer
+var out_file = try std.fs.cwd().createFile("output.png", .{});
+defer out_file.close();
+var out_buf: [8192]u8 = undefined;
+var file_writer = out_file.writer(&out_buf);
+
+try stbz.encodePng(allocator, &image, &file_writer.interface);
+try file_writer.interface.flush();
+```
+
+### Streaming Operations
+
+Process images without intermediate file I/O:
+
+```zig
+// Crop: read PNG -> crop -> write PNG
+try stbz.cropStream(allocator, &reader, &writer, x, y, width, height);
+
+// Resize: read PNG -> resize -> write PNG
+try stbz.resizeStream(allocator, &reader, &writer, new_width, new_height);
+
+// Thumbnail: read PNG -> center crop -> resize -> write PNG
+try stbz.thumbnailStream(allocator, &reader, &writer, size);
 ```
 
 ## Test Images
