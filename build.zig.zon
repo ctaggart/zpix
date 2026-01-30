@@ -1,0 +1,16 @@
+.{
+    .name = .stbz,
+    .version = "0.1.0",
+    .dependencies = .{
+        .stb = .{
+            .url = "git+https://github.com/nothings/stb#f1c79c02822848a9bed4315b12c8c8f3761e1296",
+            .hash = "N-V-__8AABQ7TgCnPlp8MP4YA8znrjd6E-ZjpF1rvrS8J_2I",
+        },
+    },
+    .fingerprint = 0xec2d81e52a878a8c,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
