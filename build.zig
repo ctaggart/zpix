@@ -71,4 +71,18 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&run_compare_tests.step);
+
+    // Large image test executable
+    const large_test = b.addExecutable(.{
+        .name = "test-large",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/test_large_image.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    large_test.root_module.addImport("stbz", stbz_mod);
+    const run_large_test = b.addRunArtifact(large_test);
+    const large_step = b.step("test-large", "Run large image streaming test");
+    large_step.dependOn(&run_large_test.step);
 }
