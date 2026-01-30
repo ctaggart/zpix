@@ -23,6 +23,7 @@
   - [x] IHDR chunk parsing
   - [x] IDAT chunk parsing and zlib decompression
   - [x] Filter reconstruction (None, Sub, Up, Average, Paeth)
+  - [x] Adam7 interlacing support
   - [x] Comparison tests pass (byte-identical to stb_image)
 - [x] Phase 4: Image Operations
   - [x] Crop operation with bounds checking
@@ -34,8 +35,9 @@
   - [x] Pure Zig PNG encoder (saveToFile/saveToMemory)
 
 ## Test Results
-- 16/16 tests passing
+- 18/18 tests passing
 - PNG decoder produces byte-identical output to stb_image
+- Interlaced (Adam7) PNG support verified against reference
 - Crop and resize operations fully tested
 
 ## Notes

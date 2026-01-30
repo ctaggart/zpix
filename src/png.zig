@@ -26,6 +26,33 @@ const ColorType = enum(u8) {
     rgba = 6,
 };
 
+// Adam7 interlacing parameters: start_x, start_y, x_spacing, y_spacing
+const Adam7 = struct {
+    const passes = [7][4]u32{
+        .{ 0, 0, 8, 8 }, // Pass 1
+        .{ 4, 0, 8, 8 }, // Pass 2
+        .{ 0, 4, 4, 8 }, // Pass 3
+        .{ 2, 0, 4, 4 }, // Pass 4
+        .{ 0, 2, 2, 4 }, // Pass 5
+        .{ 1, 0, 2, 2 }, // Pass 6
+        .{ 0, 1, 1, 2 }, // Pass 7
+    };
+
+    fn passWidth(img_width: u32, pass: usize) u32 {
+        const start_x = passes[pass][0];
+        const spacing_x = passes[pass][2];
+        if (img_width <= start_x) return 0;
+        return (img_width - start_x + spacing_x - 1) / spacing_x;
+    }
+
+    fn passHeight(img_height: u32, pass: usize) u32 {
+        const start_y = passes[pass][1];
+        const spacing_y = passes[pass][3];
+        if (img_height <= start_y) return 0;
+        return (img_height - start_y + spacing_y - 1) / spacing_y;
+    }
+};
+
 const ChunkType = struct {
     const IHDR = [4]u8{ 'I', 'H', 'D', 'R' };
     const IDAT = [4]u8{ 'I', 'D', 'A', 'T' };
@@ -59,6 +86,7 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
     var bit_depth: u8 = 0;
     var color_type: ColorType = .rgb;
     var channels: u8 = 3;
+    var interlace: u8 = 0;
     var idat_data: std.ArrayList(u8) = .empty;
     defer idat_data.deinit(allocator);
 
@@ -76,14 +104,14 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
             color_type = std.meta.intToEnum(ColorType, ct) catch return PngError.UnsupportedColorType;
             const compression = try reader.readByte();
             const filter = try reader.readByte();
-            const interlace = try reader.readByte();
+            interlace = try reader.readByte();
             _ = compression;
             _ = filter;
 
             if (bit_depth != 8) {
                 return PngError.UnsupportedBitDepth;
             }
-            if (interlace != 0) {
+            if (interlace != 0 and interlace != 1) {
                 return PngError.UnsupportedInterlace;
             }
 
@@ -115,7 +143,11 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
     defer allocator.free(raw_data);
 
     // Reconstruct image from filtered scanlines
-    return reconstructImage(allocator, raw_data, width, height, channels);
+    if (interlace == 1) {
+        return reconstructInterlacedImage(allocator, raw_data, width, height, channels);
+    } else {
+        return reconstructImage(allocator, raw_data, width, height, channels);
+    }
 }
 
 fn decompressZlib(allocator: Allocator, data: []const u8) ![]u8 {
@@ -153,6 +185,69 @@ fn reconstructImage(allocator: Allocator, raw_data: []const u8, width: u32, heig
 
         try applyFilter(filter_type, filtered_row, prev_row, out_row, channels);
         prev_row = out_row;
+    }
+
+    return img;
+}
+
+fn reconstructInterlacedImage(allocator: Allocator, raw_data: []const u8, width: u32, height: u32, channels: u8) !Image {
+    var img = try Image.init(allocator, width, height, channels);
+    errdefer img.deinit();
+
+    const img_stride = @as(usize, width) * @as(usize, channels);
+    var offset: usize = 0;
+
+    // Process each of the 7 Adam7 passes
+    for (0..7) |pass| {
+        const pass_width = Adam7.passWidth(width, pass);
+        const pass_height = Adam7.passHeight(height, pass);
+
+        if (pass_width == 0 or pass_height == 0) continue;
+
+        const pass_stride = @as(usize, pass_width) * @as(usize, channels);
+        const pass_size = @as(usize, pass_height) * (pass_stride + 1); // +1 for filter byte per row
+
+        if (offset + pass_size > raw_data.len) {
+            return PngError.InvalidImageData;
+        }
+
+        // Allocate temporary buffer for this pass
+        const pass_pixels = try allocator.alloc(u8, @as(usize, pass_width) * @as(usize, pass_height) * channels);
+        defer allocator.free(pass_pixels);
+
+        // Decode the pass (apply filters)
+        var prev_row: ?[]const u8 = null;
+        var y: usize = 0;
+        while (y < pass_height) : (y += 1) {
+            const row_start = offset + y * (pass_stride + 1);
+            const filter_type = raw_data[row_start];
+            const filtered_row = raw_data[row_start + 1 .. row_start + 1 + pass_stride];
+            const out_row = pass_pixels[y * pass_stride .. (y + 1) * pass_stride];
+
+            try applyFilter(filter_type, filtered_row, prev_row, out_row, channels);
+            prev_row = out_row;
+        }
+
+        // Scatter pixels to final image
+        const start_x = Adam7.passes[pass][0];
+        const start_y = Adam7.passes[pass][1];
+        const spacing_x = Adam7.passes[pass][2];
+        const spacing_y = Adam7.passes[pass][3];
+
+        var py: u32 = 0;
+        while (py < pass_height) : (py += 1) {
+            var px: u32 = 0;
+            while (px < pass_width) : (px += 1) {
+                const src_offset = (@as(usize, py) * pass_stride) + (@as(usize, px) * channels);
+                const dst_x = start_x + px * spacing_x;
+                const dst_y = start_y + py * spacing_y;
+                const dst_offset = (@as(usize, dst_y) * img_stride) + (@as(usize, dst_x) * channels);
+
+                @memcpy(img.data[dst_offset..][0..channels], pass_pixels[src_offset..][0..channels]);
+            }
+        }
+
+        offset += pass_size;
     }
 
     return img;
