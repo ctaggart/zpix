@@ -45,9 +45,63 @@ zig build
 
 ## Testing
 
+### Running Tests
+
 ```bash
-zig build test
+zig build test              # Run all tests (unit + comparison)
+zig build test-large        # Test large image streaming (10000×10000)
 ```
+
+### Test Fixtures
+
+Test fixtures are located in `test/fixtures/`:
+
+| File | Description | Use Case |
+|------|-------------|----------|
+| `test_rgb_4x4.png` | 4×4 RGB test pattern | Basic decode verification |
+| `test_rgba_4x4.png` | 4×4 RGBA with transparency | Alpha channel testing |
+| `test_gray_8x8.png` | 8×8 grayscale | Grayscale decode |
+| `test_gray_alpha_8x8.png` | 8×8 grayscale + alpha | Grayscale with transparency |
+| `test_interlaced_16x16.png` | 16×16 Adam7 interlaced | Interlaced PNG support |
+| `landscape_600x400.png` | 600×400 photo | Real-world testing |
+| `landscape_interlaced.png` | 600×400 interlaced | Large interlaced image |
+| `test_gray_8x8.jpg` | 8×8 JPEG grayscale | JPEG grayscale |
+| `test_rgb_4x4.jpg` | 4×4 JPEG RGB | JPEG YCbCr 4:4:4 |
+| `landscape_600x400.jpg` | 600×400 JPEG photo | JPEG with subsampling |
+
+### Comparison Testing
+
+The test suite compares stbz output against the C reference implementation (stb_image):
+
+```zig
+// Example from test/test_png.zig
+test "PNG decoder produces same output as stb_image for RGB" {
+    const allocator = std.testing.allocator;
+
+    // Load with C reference (stb_image)
+    const ref = stb_load_png("test/fixtures/test_rgb_4x4.png");
+    defer stb_free(ref.data);
+
+    // Load with Zig implementation
+    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
+    defer zig_image.deinit();
+
+    // Compare pixel-by-pixel
+    try std.testing.expectEqualSlices(u8, ref_slice, zig_image.data);
+}
+```
+
+**What's tested:**
+- Pixel-perfect output matching stb_image for all formats
+- Edge cases (interlacing, different color types, subsampling)
+- Image operations (crop, resize, rotate, flip)
+- Streaming operations with minimal memory
+- Round-trip encoding/decoding
+
+**Adding new test fixtures:**
+1. Add image file to `test/fixtures/`
+2. Create comparison test in `test/test_png.zig` or `test/test_jpeg.zig`
+3. Verify stbz output matches stb_image byte-for-byte
 
 ## CLI Usage
 

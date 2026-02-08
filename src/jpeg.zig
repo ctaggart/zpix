@@ -3,6 +3,8 @@ const Allocator = std.mem.Allocator;
 const image_mod = @import("image.zig");
 const Image = image_mod.Image;
 
+const log = std.log.scoped(.stbz_jpeg);
+
 pub const JpegError = error{
     InvalidSignature,
     InvalidMarker,
@@ -198,6 +200,7 @@ const BitReader = struct {
                 return ht.symbols[idx];
             }
         }
+        log.debug("Huffman decode failed: no valid code found in table", .{});
         return JpegError.HuffmanDecodeFailed;
     }
 
@@ -248,6 +251,7 @@ pub fn loadFromMemory(allocator: Allocator, data: []const u8) !Image {
 
 fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
     if (data.len < 2 or data[0] != 0xFF or data[1] != 0xD8) {
+        log.debug("Invalid JPEG signature: expected FF D8, got {X:0>2} {X:0>2}", .{ if (data.len > 0) data[0] else 0, if (data.len > 1) data[1] else 0 });
         return JpegError.InvalidSignature;
     }
 
@@ -300,7 +304,10 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                     remaining -= 1;
                     const precision = info >> 4;
                     const table_id = info & 0x0F;
-                    if (table_id > 3) return JpegError.InvalidQuantizationTable;
+                    if (table_id > 3) {
+                        log.debug("Invalid quantization table ID: {}, max is 3", .{table_id});
+                        return JpegError.InvalidQuantizationTable;
+                    }
 
                     if (precision == 0) {
                         // 8-bit quantization values, stored in zigzag order

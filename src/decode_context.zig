@@ -1,6 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const log = std.log.scoped(.stbz_png);
+
 pub const PNG_SIGNATURE = [8]u8{ 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
 
 pub const ChunkType = struct {
@@ -48,6 +50,7 @@ pub const PngDecodeContext = struct {
         // Verify PNG signature
         const signature = try reader.takeArray(8);
         if (!std.mem.eql(u8, signature, &PNG_SIGNATURE)) {
+            log.debug("Invalid PNG signature: expected 89 50 4E 47 0D 0A 1A 0A, got {X:0>2} {X:0>2} {X:0>2} {X:0>2} {X:0>2} {X:0>2} {X:0>2} {X:0>2}", .{ signature[0], signature[1], signature[2], signature[3], signature[4], signature[5], signature[6], signature[7] });
             return DecodeError.InvalidSignature;
         }
 

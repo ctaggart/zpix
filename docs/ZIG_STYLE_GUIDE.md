@@ -11,6 +11,7 @@ A practical guide for writing idiomatic Zig code, based on Zig 0.15+ patterns an
 5. [Interfaces and Generics](#interfaces-and-generics)
 6. [Testing Practices](#testing-practices)
 7. [Code Organization](#code-organization)
+8. [Variable Naming](#variable-naming)
 
 ---
 
@@ -450,6 +451,145 @@ pub fn streamingCrop(allocator: Allocator, reader: *std.Io.Reader, ...) !void {
     defer ctx.deinit(allocator);
     // Use ctx...
 }
+```
+
+---
+
+## Variable Naming
+
+### Use Descriptive Full Names
+
+Choose variable names that clearly communicate intent and purpose:
+
+```zig
+// Bad: Abbreviated, unclear
+const n = try reader.read(buf);
+const cw = width * channels;
+const val = (t * wy + b * (1 - wy));
+
+// Good: Clear, self-documenting
+const bytes_read = try reader.read(buffer);
+const component_width = width * channels;
+const interpolated_value = (top * weight_y + bottom * (1 - weight_y));
+```
+
+### When Abbreviations Are Acceptable
+
+**Loop counters in small scopes:**
+```zig
+// Good: Universal conventions
+for (0..height) |y| {
+    for (0..width) |x| {
+        const pixel = getPixel(x, y);
+    }
+}
+
+for (items, 0..) |item, i| {
+    process(item, i);
+}
+```
+
+**Coordinate and dimension variables:**
+```zig
+// Good: Clear from context
+pub fn crop(self: *const Image, x: u32, y: u32, w: u32, h: u32) !Image {
+    // x, y, w, h are obvious in geometry context
+}
+```
+
+**Well-established domain abbreviations:**
+```zig
+// Image processing standards
+const r = pixel[0];  // Red channel
+const g = pixel[1];  // Green channel
+const b = pixel[2];  // Blue channel
+const a = pixel[3];  // Alpha channel
+
+const cb = chroma_blue;   // YCbCr color space
+const cr = chroma_red;    // YCbCr color space
+
+// Format-specific (JPEG)
+const qt = quantization_table;
+const ht = huffman_table;
+const mcu = minimum_coded_unit;
+
+// Format-specific (PNG)
+const crc = cyclic_redundancy_check;
+const idat = image_data_chunk;
+```
+
+**Very short-lived temporaries:**
+```zig
+// Acceptable: Used immediately, scope < 5 lines
+for (chunks) |chunk| {
+    const len = chunk.length;
+    const buf = try allocator.alloc(u8, len);
+    defer allocator.free(buf);
+    try reader.readAll(buf);
+}
+```
+
+### Guidelines
+
+1. **Default to clarity over brevity** - Code is read more than written
+2. **Avoid single-letter variables** except for universal conventions (i, j, x, y in loops)
+3. **Use full words for struct fields** - They're referenced throughout the codebase
+4. **Context matters** - `img` might be fine in a 10-line function, but `image` is better in a large file
+5. **Domain expertise** - Standard abbreviations like `rgba`, `yuv`, `dct` are clearer to domain experts than spelled out versions
+
+### Examples from stbz
+
+```zig
+// Good: Descriptive function parameters
+pub fn resize(
+    self: *const Image,
+    new_width: u32,
+    new_height: u32,
+) !Image
+
+// Good: Clear struct fields
+pub const Image = struct {
+    width: u32,
+    height: u32,
+    channels: u8,
+    data: []u8,
+    allocator: Allocator,
+};
+
+// Good: Domain-appropriate naming
+fn idct(coefficients: *const [64]i32, output: *[64]u8) void {
+    // IDCT = Inverse Discrete Cosine Transform
+    // This abbreviation is standard in image/video compression
+}
+
+// Good: Descriptive locals in complex logic
+const horizontal_scale = max_horizontal_sampling / component.h_sample;
+const vertical_scale = max_vertical_sampling / component.v_sample;
+const component_width = ((width + 7) / 8) * component.h_sample;
+```
+
+### Anti-Patterns to Avoid
+
+```zig
+// Bad: Unclear abbreviations
+const tmp = allocate();
+const res = process(tmp);
+const val = compute(res);
+
+// Bad: Meaningless names
+const x1 = data[0];
+const x2 = data[1];
+const x3 = calculate(x1, x2);
+
+// Bad: Inconsistent naming
+const buffer_size = 1024;
+const buf_data = allocator.alloc(u8, buffer_size);  // Mix of buffer/buf
+const buff_len = buf_data.len;                       // Now it's buff?
+
+// Good: Consistent, clear naming
+const buffer_size = 1024;
+const buffer_data = try allocator.alloc(u8, buffer_size);
+const buffer_length = buffer_data.len;
 ```
 
 ---
