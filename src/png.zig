@@ -33,8 +33,9 @@ pub fn loadFromFile(allocator: Allocator, path: []const u8) !Image {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
-    var buf: [8192]u8 = undefined;
-    var file_reader = file.reader(&buf);
+    const buf = try allocator.alloc(u8, 65536);
+    defer allocator.free(buf);
+    var file_reader = file.reader(buf);
 
     return decode(allocator, &file_reader.interface);
 }

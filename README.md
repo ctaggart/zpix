@@ -154,6 +154,18 @@ try stbz.streamingThumbnail(allocator, &reader, &writer, size);
 | `loadPngFile` + `crop` | ~300 MB |
 | `streamingCrop` | ~120 KB |
 
+## Benchmarks
+
+Compare stbz performance against the C reference (stb_image):
+
+```bash
+zig build bench                                    # Full comparison table
+zig build bench -- png-decode-zig                  # Single benchmark (for memory profiling)
+/usr/bin/time -v zig-out/bin/bench png-decode-zig  # Measure peak memory
+```
+
+Available individual benchmarks: `png-decode-zig`, `png-decode-c`, `jpeg-decode-zig`, `jpeg-decode-c`, `png-encode-zig`, `png-encode-c`, `resize-zig`, `resize-c`.
+
 ## Test Images
 
 The test fixture `landscape_600x400.png` is a photo of Cinque Terre, Italy, sourced from W3Schools and used for testing purposes.

@@ -91,12 +91,12 @@ pub const PngDecodeContext = struct {
                 // Skip CRC
                 try reader.discardAll(4);
             } else if (std.mem.eql(u8, chunk_type, &ChunkType.IDAT)) {
-                // Read IDAT data in chunks to handle large compressed data
+                try idat_data.ensureUnusedCapacity(allocator, length);
                 var remaining: usize = length;
                 while (remaining > 0) {
-                    const to_read = @min(remaining, 4096);
+                    const to_read = @min(remaining, 65536);
                     const chunk_data = try reader.take(to_read);
-                    try idat_data.appendSlice(allocator, chunk_data);
+                    idat_data.appendSliceAssumeCapacity(chunk_data);
                     remaining -= to_read;
                 }
                 // Skip CRC
@@ -110,7 +110,12 @@ pub const PngDecodeContext = struct {
         }
 
         // Decompress IDAT data (zlib)
-        const raw_data = try decompressZlib(allocator, idat_data.items);
+        // For non-interlaced, we know the exact decompressed size
+        const expected_size: usize = if (interlace == 0)
+            @as(usize, height) * (@as(usize, width) * @as(usize, channels) + 1)
+        else
+            0;
+        const raw_data = try decompressZlib(allocator, idat_data.items, expected_size);
         errdefer allocator.free(raw_data);
 
         return Self{
@@ -139,10 +144,23 @@ pub const PngDecodeContext = struct {
     }
 };
 
-fn decompressZlib(allocator: Allocator, data: []const u8) (DecodeError || Allocator.Error)![]u8 {
+fn decompressZlib(allocator: Allocator, data: []const u8, expected_size: usize) (DecodeError || Allocator.Error)![]u8 {
     var input_reader: std.Io.Reader = .fixed(data);
-    var decompress: std.compress.flate.Decompress = .init(&input_reader, .zlib, &.{});
+    const decompress_buffer = try allocator.alloc(u8, 65536);
+    defer allocator.free(decompress_buffer);
+    var decompress: std.compress.flate.Decompress = .init(&input_reader, .zlib, decompress_buffer);
 
+    // Pre-allocate exact expected size and read directly into it
+    if (expected_size > 0) {
+        const result = try allocator.alloc(u8, expected_size);
+        errdefer allocator.free(result);
+        decompress.reader.readSliceAll(result) catch {
+            return DecodeError.DecompressionFailed;
+        };
+        return result;
+    }
+
+    // Fallback for unknown size
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(allocator);
 
@@ -350,11 +368,12 @@ pub const PngStreamingDecoder = struct {
 
                 try reader.discardAll(4); // CRC
             } else if (std.mem.eql(u8, chunk_type, &ChunkType.IDAT)) {
+                try idat_data.ensureUnusedCapacity(allocator, length);
                 var remaining: usize = length;
                 while (remaining > 0) {
-                    const to_read = @min(remaining, 4096);
+                    const to_read = @min(remaining, 65536);
                     const chunk_data = try reader.take(to_read);
-                    try idat_data.appendSlice(allocator, chunk_data);
+                    idat_data.appendSliceAssumeCapacity(chunk_data);
                     remaining -= to_read;
                 }
                 try reader.discardAll(4); // CRC
