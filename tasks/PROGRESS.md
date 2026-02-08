@@ -1,6 +1,6 @@
 # stbz Progress Tracker
 
-## Current Phase: Phase 5 - API Polish
+## Current Phase: Complete
 
 ## Completed
 - [x] Phase 1: Project Setup
@@ -34,10 +34,21 @@
   - [x] `stbz resize` - Resize to specified dimensions
   - [x] `stbz thumbnail` - Create square thumbnail (center crop + resize)
   - [x] Pure Zig PNG encoder (saveToFile/saveToMemory)
+- [x] Phase 6: JPEG Decoder
+  - [x] Baseline DCT (SOF0) decoding
+  - [x] Huffman and quantization table parsing
+  - [x] IDCT (integer fixed-point, matching stb_image)
+  - [x] YCbCr to RGB conversion
+  - [x] Chroma subsampling: 4:4:4, 4:2:2, 4:2:0
+  - [x] Bilinear chroma upsampling (matches stb_image)
+  - [x] Grayscale JPEG support
+  - [x] Restart marker (DRI) handling
+  - [x] Comparison tests pass against stb_image (tolerance <= 3)
 
 ## Test Results
-- 22/22 tests passing
+- 47/47 tests passing
 - PNG decoder produces byte-identical output to stb_image
+- JPEG decoder matches stb_image within tolerance of 1 (small images) to 3 (large images)
 - Interlaced (Adam7) PNG support verified against reference
 - Crop and resize operations fully tested
 

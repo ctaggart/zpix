@@ -246,15 +246,9 @@ pub const Buffer = struct {
 ### ArrayList Patterns
 
 ```zig
-// Pattern 1: Pass allocator to each operation (newer style)
 var list: std.ArrayList(u8) = .empty;
 defer list.deinit(allocator);
 try list.append(allocator, value);
-
-// Pattern 2: Store allocator in list (traditional)
-var list = std.ArrayList(u8).init(allocator);
-defer list.deinit();
-try list.append(value);
 ```
 
 ### Use defer for Cleanup

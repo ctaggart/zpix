@@ -1,20 +1,30 @@
 # stbz
 
-A Zig port of stb_image focusing on PNG support with thumbnail and tiling capabilities.
+A pure Zig image library for generating thumbnails and tiles. Decodes JPEG and PNG, encodes PNG. No C dependencies in the core library.
 
 ## Features
 
-- Pure Zig PNG decoder and encoder (no C dependencies for core functionality)
-- Crop operations
-- Resize operations (bilinear interpolation)
-- Thumbnail generation (center crop + resize)
-- Rotate (90°, 180°, 270°)
-- Flip (horizontal, vertical)
+- **Decode**: JPEG (baseline) and PNG
+- **Encode**: PNG
+- Crop, resize (bilinear), thumbnail generation
+- Rotate (90/180/270) and flip (horizontal/vertical)
+- Low-memory streaming APIs for large images
 - CLI tool for image processing
 
-## PNG Support
+## Format Support
 
-### Supported
+### JPEG (decode only)
+
+| Feature | Status |
+|---------|--------|
+| Baseline DCT (SOF0) | Yes |
+| Grayscale | Yes |
+| YCbCr 4:4:4, 4:2:2, 4:2:0 | Yes |
+| Restart markers (DRI) | Yes |
+| Progressive (SOF2) | No |
+| Arithmetic coding | No |
+
+### PNG
 
 | Feature | Decode | Encode |
 |---------|--------|--------|
@@ -25,12 +35,7 @@ A Zig port of stb_image focusing on PNG support with thumbnail and tiling capabi
 | Adam7 interlacing | Yes | No |
 | All filter types (None, Sub, Up, Average, Paeth) | Yes | None only |
 
-### Not Supported
-
-- Palette/indexed color (color type 3)
-- 16-bit depth
-- 1/2/4-bit depth
-- Ancillary chunks (gAMA, cHRM, sRGB, iCCP, tRNS)
+Not supported: palette/indexed color, 16-bit depth, 1/2/4-bit depth, ancillary chunks.
 
 ## Building
 
@@ -70,8 +75,9 @@ stbz flip input.png output.png h
 ```zig
 const stbz = @import("stbz");
 
-// Load a PNG image
-var image = try stbz.loadPngFile(allocator, "image.png");
+// Load an image (JPEG or PNG)
+var image = try stbz.loadJpegFile(allocator, "photo.jpg");
+// or: var image = try stbz.loadPngFile(allocator, "image.png");
 defer image.deinit();
 
 // Crop
@@ -82,7 +88,7 @@ defer cropped.deinit();
 var resized = try image.resize(new_width, new_height);
 defer resized.deinit();
 
-// Save
+// Save as PNG
 try stbz.savePngFile(&resized, "output.png");
 ```
 

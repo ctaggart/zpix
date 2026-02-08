@@ -4,17 +4,21 @@ const Allocator = std.mem.Allocator;
 pub const image = @import("image.zig");
 pub const Image = image.Image;
 pub const png = @import("png.zig");
+pub const jpeg = @import("jpeg.zig");
 pub const streaming = @import("streaming.zig");
 
 // Core Reader/Writer based functions
 pub const decodePng = png.decode;
 pub const encodePng = png.encode;
+pub const decodeJpeg = jpeg.decode;
 
 // Convenience file-based functions
 pub const loadPngFile = png.loadFromFile;
 pub const loadPngMemory = png.loadFromMemory;
 pub const savePngFile = png.saveToFile;
 pub const savePngMemory = png.saveToMemory;
+pub const loadJpegFile = jpeg.loadFromFile;
+pub const loadJpegMemory = jpeg.loadFromMemory;
 
 // ============================================================================
 // Streaming Operations (full image in memory)

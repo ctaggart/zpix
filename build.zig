@@ -68,9 +68,29 @@ pub fn build(b: *std.Build) void {
 
     const run_compare_tests = b.addRunArtifact(compare_tests);
 
+    // JPEG comparison tests (Zig vs C reference)
+    const jpeg_tests = b.addTest(.{
+        .name = "jpeg-compare-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/test_jpeg.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    jpeg_tests.root_module.addImport("stbz", stbz_mod);
+    jpeg_tests.root_module.addIncludePath(b.path("reference"));
+    jpeg_tests.root_module.addCSourceFile(.{
+        .file = b.path("reference/ref_impl.c"),
+        .flags = &.{"-std=c99"},
+    });
+    jpeg_tests.root_module.link_libc = true;
+
+    const run_jpeg_tests = b.addRunArtifact(jpeg_tests);
+
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_unit_tests.step);
     test_step.dependOn(&run_compare_tests.step);
+    test_step.dependOn(&run_jpeg_tests.step);
 
     // Large image test executable
     const large_test = b.addExecutable(.{

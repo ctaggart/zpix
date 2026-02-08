@@ -13,10 +13,11 @@
 ## Architecture
 
 - `src/stbz.zig` - Main library entry point
-- `src/png.zig` - PNG decoder
+- `src/jpeg.zig` - JPEG baseline decoder
+- `src/png.zig` - PNG decoder/encoder
 - `src/image.zig` - Image data structure
-- `src/resize.zig` - Resize algorithms
-- `src/crop.zig` - Crop operations
+- `src/streaming.zig` - Low-memory streaming operations
+- `src/decode_context.zig` - Shared PNG decoding context
 
 ## Testing
 
