@@ -3,7 +3,10 @@
 ## Build Commands
 
 - `zig build` - Build the library
-- `zig build test` - Run all tests
+- `zig build test` - Run unit tests (fast, no C dependencies)
+- `zig build integration-test` - Run integration tests (vs stb_image)
+- `zig build test-all` - Run all tests (unit + integration)
+- `zig build bench` - Run performance benchmarks
 - `zig build -Doptimize=ReleaseFast` - Build optimized
 
 ## Development Approach
@@ -13,16 +16,32 @@
 ## Architecture
 
 - `src/stbz.zig` - Main library entry point
-- `src/jpeg.zig` - JPEG baseline decoder
+- `src/jpeg.zig` - JPEG decoder (baseline + progressive)
 - `src/png.zig` - PNG decoder/encoder
 - `src/image.zig` - Image data structure
 - `src/streaming.zig` - Low-memory streaming operations
 - `src/decode_context.zig` - Shared PNG decoding context
+- `src/cli.zig` - Command-line interface
 
 ## Testing
 
-All Zig implementations must be compared against the C reference (stb_image).
+### Test Organization
+
+- **Unit tests** (`zig build test`): Fast tests with no C dependencies
+  - Located in `src/*.zig` and `test/test_jpeg_unit.zig`, `test/test_error_handling.zig`
+  - Tests behavior, edge cases, error handling
+
+- **Integration tests** (`zig build integration-test`): Pixel-perfect comparison vs stb_image
+  - Located in `test/test_png.zig` and `test/test_jpeg.zig`
+  - Compares output byte-for-byte against C reference implementation
+
 Test fixtures are in `test/fixtures/`.
+
+### Coverage Requirements
+
+- All new JPEG/PNG features must be tested against stb_image
+- Error paths must have explicit error handling tests
+- Behavioral changes require unit tests before implementation (TDD)
 
 ## Code Style
 

@@ -18,11 +18,15 @@ A pure Zig image library for generating thumbnails and tiles. Decodes JPEG and P
 | Feature | Status |
 |---------|--------|
 | Baseline DCT (SOF0) | Yes |
+| Extended sequential DCT (SOF1) | Yes |
+| Progressive DCT (SOF2) | Yes ✓ |
 | Grayscale | Yes |
 | YCbCr 4:4:4, 4:2:2, 4:2:0 | Yes |
 | Restart markers (DRI) | Yes |
-| Progressive (SOF2) | No |
+| DC/AC refinement scans | Yes |
 | Arithmetic coding | No |
+
+Progressive JPEG support includes all scan types (DC/AC first and refinement scans) for pixel-perfect decoding.
 
 ### PNG
 
@@ -48,9 +52,22 @@ zig build
 ### Running Tests
 
 ```bash
-zig build test              # Run all tests (unit + comparison)
+zig build test              # Run unit tests (58 tests, fast, no C deps)
+zig build integration-test  # Run integration tests (11 tests, vs stb_image)
+zig build test-all          # Run all tests (69 tests)
 zig build test-large        # Test large image streaming (10000×10000)
+zig build bench             # Performance benchmarks
 ```
+
+**Test organization:**
+- **Unit tests** (58 tests, ~70ms): No C dependencies, fast feedback
+  - Image operations (18 tests)
+  - PNG encoding/streaming (10 tests)
+  - JPEG behavioral tests (12 tests)
+  - Error handling tests (19 tests)
+- **Integration tests** (11 tests, ~210ms): Pixel-perfect comparison vs stb_image
+  - PNG comparison (7 tests)
+  - JPEG comparison (4 tests)
 
 ### Test Fixtures
 
@@ -67,6 +84,7 @@ Test fixtures are located in `test/fixtures/`:
 | `landscape_interlaced.png` | 600×400 interlaced | Large interlaced image |
 | `test_gray_8x8.jpg` | 8×8 JPEG grayscale | JPEG grayscale |
 | `test_rgb_4x4.jpg` | 4×4 JPEG RGB | JPEG YCbCr 4:4:4 |
+| `test_rgb_4x4_progressive.jpg` | 4×4 progressive JPEG | Progressive JPEG with refinement scans |
 | `landscape_600x400.jpg` | 600×400 JPEG photo | JPEG with subsampling |
 
 ### Comparison Testing
@@ -93,10 +111,13 @@ test "PNG decoder produces same output as stb_image for RGB" {
 
 **What's tested:**
 - Pixel-perfect output matching stb_image for all formats
+- Progressive JPEG (all scan types, refinement scans)
 - Edge cases (interlacing, different color types, subsampling)
+- Error handling (invalid files, truncated data, corrupt markers)
 - Image operations (crop, resize, rotate, flip)
 - Streaming resize with minimal memory
 - Round-trip encoding/decoding
+- Memory leak detection
 
 **Adding new test fixtures:**
 1. Add image file to `test/fixtures/`
