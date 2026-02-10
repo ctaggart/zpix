@@ -1037,65 +1037,203 @@ fn clampByte(val: i32) u8 {
     return @intCast(val);
 }
 
-/// Decode DC coefficient for progressive JPEG
+/// Decode DC coefficient for progressive JPEG (first scan and refinement)
 fn decodeBlockProgDc(
     bits: *BitReader,
     coefficients: []i16,
     dc_huffman_table: *const HuffmanTable,
     dc_predictor: *i32,
+    successive_approx_high: u8,
     successive_approx_low: u8,
 ) !void {
-    // DC first scan: decode differential DC coefficient
-    const dc_category = try bits.decodeHuffman(dc_huffman_table);
-    if (dc_category > 0) {
-        dc_predictor.* += bits.receiveExtend(@intCast(dc_category));
+    if (successive_approx_high == 0) {
+        // DC first scan: decode differential DC coefficient
+        const dc_category = try bits.decodeHuffman(dc_huffman_table);
+        if (dc_category > 0) {
+            dc_predictor.* += bits.receiveExtend(@intCast(dc_category));
+        }
+        // Store DC coefficient shifted by successive_approx_low bits
+        coefficients[0] = @intCast(dc_predictor.* << @intCast(successive_approx_low));
+    } else {
+        // DC refinement scan: read one bit and add precision
+        const bit = bits.getBits(1);
+        coefficients[0] += @as(i16, @intCast(bit)) << @intCast(successive_approx_low);
     }
-    // Store DC coefficient shifted by successive_approx_low bits
-    coefficients[0] = @intCast(dc_predictor.* << @intCast(successive_approx_low));
 }
 
-/// Decode AC coefficients for progressive JPEG (first scan only)
+/// Decode AC coefficients for progressive JPEG (first scan and refinement)
 fn decodeBlockProgAc(
     bits: *BitReader,
     coefficients: []i16,
     ac_huffman_table: *const HuffmanTable,
     spectral_start: u8,
     spectral_end: u8,
+    successive_approx_high: u8,
     successive_approx_low: u8,
     end_of_block_run: *u16,
 ) !void {
-    // Handle EOB run from previous block
-    if (end_of_block_run.* > 0) {
-        end_of_block_run.* -= 1;
-        return;
-    }
+    const bit_position_shift: u4 = @intCast(successive_approx_low);
 
-    var coefficient_index: usize = spectral_start;
-    while (coefficient_index <= spectral_end) {
-        const huffman_symbol = try bits.decodeHuffman(ac_huffman_table);
-        const zero_run_length = huffman_symbol >> 4;
-        const coefficient_category: u5 = @intCast(huffman_symbol & 0x0F);
+    if (successive_approx_high == 0) {
+        // AC first scan: decode new coefficients
+        if (end_of_block_run.* > 0) {
+            end_of_block_run.* -= 1;
+            return;
+        }
 
-        if (coefficient_category == 0) {
-            if (zero_run_length == 15) {
-                // ZRL: skip 16 zeros
-                coefficient_index += 16;
+        var coefficient_index: usize = spectral_start;
+        while (coefficient_index <= spectral_end) {
+            const huffman_symbol = try bits.decodeHuffman(ac_huffman_table);
+            const zero_run_length = huffman_symbol >> 4;
+            const coefficient_category: u5 = @intCast(huffman_symbol & 0x0F);
+
+            if (coefficient_category == 0) {
+                if (zero_run_length == 15) {
+                    // ZRL: skip 16 zeros
+                    coefficient_index += 16;
+                } else {
+                    // EOB: rest of block is zeros, handle run extension
+                    end_of_block_run.* = @as(u16, 1) << @intCast(zero_run_length);
+                    if (zero_run_length > 0) {
+                        end_of_block_run.* += @intCast(bits.getBits(@intCast(zero_run_length)));
+                    }
+                    end_of_block_run.* -= 1;
+                    break;
+                }
             } else {
-                // EOB: rest of block is zeros, handle run extension
-                end_of_block_run.* = @as(u16, 1) << @intCast(zero_run_length);
+                // Skip zero_run_length zeros, then store coefficient
+                coefficient_index += zero_run_length;
+                if (coefficient_index > spectral_end) break;
+                const coefficient_value = bits.receiveExtend(coefficient_category);
+                coefficients[zigzag_order[coefficient_index]] = @intCast(coefficient_value << bit_position_shift);
+                coefficient_index += 1;
+            }
+        }
+    } else {
+        // AC refinement scan: refine existing coefficients and place new ones
+        var coefficient_index: usize = spectral_start;
+
+        // If we have an EOB run from previous block, refine existing non-zeros and decrement
+        if (end_of_block_run.* > 0) {
+            const bit_mask: i16 = @as(i16, 1) << bit_position_shift;
+            while (coefficient_index <= spectral_end) : (coefficient_index += 1) {
+                const pos = zigzag_order[coefficient_index];
+                if (coefficients[pos] != 0) {
+                    // Refine existing non-zero coefficient
+                    const refine_bit = bits.getBits(1);
+                    if (refine_bit != 0) {
+                        // Only modify if bit at this position isn't already set
+                        if ((coefficients[pos] & bit_mask) == 0) {
+                            if (coefficients[pos] > 0) {
+                                coefficients[pos] += bit_mask;
+                            } else {
+                                coefficients[pos] -= bit_mask;
+                            }
+                        }
+                    }
+                }
+            }
+            end_of_block_run.* -= 1;
+            return;
+        }
+
+        // No EOB run: decode symbols
+        while (coefficient_index <= spectral_end) {
+            const huffman_symbol = try bits.decodeHuffman(ac_huffman_table);
+            var zero_run_length: i32 = @intCast(huffman_symbol >> 4);
+            const coefficient_category: u5 = @intCast(huffman_symbol & 0x0F);
+
+            var new_coeff_value: i16 = 0;
+            if (coefficient_category != 0) {
+                // In AC refinement, coefficient category must be 1
+                if (coefficient_category != 1) return JpegError.InvalidScanHeader;
+                // There's a new coefficient to place after the run
+                const sign_bit = bits.getBits(1);
+                new_coeff_value = if (sign_bit != 0) @as(i16, 1) << bit_position_shift else -(@as(i16, 1) << bit_position_shift);
+            }
+
+            // Special case: r=15, s=0 means skip 16 coefficients (ZRL)
+            if (coefficient_category == 0 and zero_run_length == 15) {
+                // Skip 16 coefficients (refining any non-zeros along the way)
+                const bit_mask: i16 = @as(i16, 1) << bit_position_shift;
+                var skip_count: i32 = 0;
+                while (skip_count < 16 and coefficient_index <= spectral_end) {
+                    const pos = zigzag_order[coefficient_index];
+                    if (coefficients[pos] != 0) {
+                        // Refine this coefficient
+                        const refine_bit = bits.getBits(1);
+                        if (refine_bit != 0) {
+                            if ((coefficients[pos] & bit_mask) == 0) {
+                                if (coefficients[pos] > 0) {
+                                    coefficients[pos] += bit_mask;
+                                } else {
+                                    coefficients[pos] -= bit_mask;
+                                }
+                            }
+                        }
+                    } else {
+                        skip_count += 1;
+                    }
+                    coefficient_index += 1;
+                }
+                continue;
+            }
+
+            // EOB with possible run
+            if (coefficient_category == 0 and zero_run_length < 15) {
+                // In refinement scans, EOB run calculation is: (1 << r) - 1 + extra_bits
+                end_of_block_run.* = (@as(u16, 1) << @intCast(zero_run_length)) - 1;
                 if (zero_run_length > 0) {
                     end_of_block_run.* += @intCast(bits.getBits(@intCast(zero_run_length)));
                 }
-                end_of_block_run.* -= 1;
+                // Refine remaining coefficients in this block before EOB
+                const bit_mask: i16 = @as(i16, 1) << bit_position_shift;
+                while (coefficient_index <= spectral_end) : (coefficient_index += 1) {
+                    const pos = zigzag_order[coefficient_index];
+                    if (coefficients[pos] != 0) {
+                        const refine_bit = bits.getBits(1);
+                        if (refine_bit != 0) {
+                            if ((coefficients[pos] & bit_mask) == 0) {
+                                if (coefficients[pos] > 0) {
+                                    coefficients[pos] += bit_mask;
+                                } else {
+                                    coefficients[pos] -= bit_mask;
+                                }
+                            }
+                        }
+                    }
+                }
                 break;
             }
-        } else {
-            // Skip zero_run_length zeros, then store coefficient
-            coefficient_index += zero_run_length;
-            if (coefficient_index > spectral_end) break;
-            const coefficient_value = bits.receiveExtend(coefficient_category);
-            coefficients[zigzag_order[coefficient_index]] = @intCast(coefficient_value << @intCast(successive_approx_low));
-            coefficient_index += 1;
+
+            // Regular case: advance by zero_run_length zeros, place new coefficient
+            // While advancing, refine any non-zeros encountered
+            const bit_mask: i16 = @as(i16, 1) << bit_position_shift;
+            while (coefficient_index <= spectral_end) {
+                const pos = zigzag_order[coefficient_index];
+                coefficient_index += 1;
+
+                if (coefficients[pos] != 0) {
+                    // Refine existing non-zero coefficient
+                    const refine_bit = bits.getBits(1);
+                    if (refine_bit != 0) {
+                        if ((coefficients[pos] & bit_mask) == 0) {
+                            if (coefficients[pos] > 0) {
+                                coefficients[pos] += bit_mask;
+                            } else {
+                                coefficients[pos] -= bit_mask;
+                            }
+                        }
+                    }
+                } else {
+                    // Found a zero - check if we should place new coefficient here
+                    if (zero_run_length == 0) {
+                        coefficients[pos] = new_coeff_value;
+                        break;
+                    }
+                    zero_run_length -= 1;
+                }
+            }
         }
     }
 }
@@ -1120,12 +1258,6 @@ fn decodeScanProgressive(
     scan_component_indices: []const u8,
 ) !void {
     if (width == 0 or height == 0) return JpegError.InvalidFrameHeader;
-
-    // Skip refinement scans for now (Phase 2/4)
-    if (successive_approx_high > 0) {
-        log.debug("Skipping refinement scan: Ss={} Se={} Ah={} Al={}", .{ spectral_start, spectral_end, successive_approx_high, successive_approx_low });
-        return;
-    }
 
     const mcu_width: u32 = @as(u32, max_horizontal_sampling) * 8;
     const mcu_height: u32 = @as(u32, max_vertical_sampling) * 8;
@@ -1161,10 +1293,10 @@ fn decodeScanProgressive(
 
             if (is_dc_scan) {
                 const dc_huffman_table = &dc_huffman_tables[component.dc_table];
-                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
+                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_high, successive_approx_low);
             } else {
                 const ac_huffman_table = &ac_huffman_tables[component.ac_table];
-                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_high, successive_approx_low, &end_of_block_run);
             }
         }
     } else {
@@ -1198,10 +1330,10 @@ fn decodeScanProgressive(
 
                             if (is_dc_scan) {
                                 const dc_huffman_table = &dc_huffman_tables[component.dc_table];
-                                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
+                                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_high, successive_approx_low);
                             } else {
                                 const ac_huffman_table = &ac_huffman_tables[component.ac_table];
-                                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+                                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_high, successive_approx_low, &end_of_block_run);
                             }
                         }
                     }

@@ -126,26 +126,35 @@ test "JPEG decoder handles larger images" {
     try expectPixelsClose(ref_slice, zig_image.data, 3);
 }
 
-test "JPEG decoder handles progressive RGB (with limitations)" {
+test "JPEG decoder handles progressive RGB" {
     const allocator = std.testing.allocator;
 
-    // Progressive JPEG support is partially implemented:
+    // Progressive JPEG support is fully implemented:
     // - DC first scans: ✓
+    // - DC refinement scans: ✓
     // - AC first scans (interleaved and non-interleaved): ✓
-    // - DC refinement scans: ✗ (skipped)
-    // - AC refinement scans: ✗ (skipped)
+    // - AC refinement scans: ✓
     //
-    // Refinement scans add precision bits. Skipping them results in lower quality
-    // but the image still loads correctly with reduced precision.
+    // All refinement scans are properly decoded for pixel-perfect quality.
 
+    // Load with C reference implementation
+    const ref = stb_load("test/fixtures/test_rgb_4x4_progressive.jpg", 0) orelse {
+        std.debug.print("Failed to load reference image\n", .{});
+        return error.ReferenceLoadFailed;
+    };
+    defer stb_free(ref.data);
+
+    // Load with our Zig implementation
     var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
     defer img.deinit();
 
-    // Verify dimensions
-    try std.testing.expectEqual(@as(u32, 4), img.width);
-    try std.testing.expectEqual(@as(u32, 4), img.height);
-    try std.testing.expectEqual(@as(u8, 3), img.channels);
+    // Compare dimensions
+    try std.testing.expectEqual(@as(u32, @intCast(ref.width)), img.width);
+    try std.testing.expectEqual(@as(u32, @intCast(ref.height)), img.height);
+    try std.testing.expectEqual(@as(u8, @intCast(ref.channels)), img.channels);
 
-    // Note: We don't compare pixels with stb_image here because we skip refinement
-    // scans, resulting in lower quality. The image is valid but less precise.
+    // Compare pixel data - progressive JPEGs now match pixel-perfect
+    const size = @as(usize, @intCast(ref.width)) * @as(usize, @intCast(ref.height)) * @as(usize, @intCast(ref.channels));
+    const ref_slice = ref.data[0..size];
+    try expectPixelsClose(ref_slice, img.data, 1);
 }
