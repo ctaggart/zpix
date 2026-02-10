@@ -1448,10 +1448,3 @@ fn readU16(data: []const u8, pos: usize) u32 {
 fn f2fixed(comptime x: f64) i32 {
     return @as(i32, @intFromFloat(x * 4096.0 + 0.5)) << 8;
 }
-
-test "JPEG module compiles" {
-    // Placeholder test to verify module compiles
-    const ht = HuffmanTable{};
-    _ = ht;
-    try std.testing.expect(true);
-}
