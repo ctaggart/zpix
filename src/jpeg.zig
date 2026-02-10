@@ -61,6 +61,10 @@ const Component = struct {
     dc_table: u8, // DC Huffman table index
     ac_table: u8, // AC Huffman table index
     dc_pred: i32, // DC predictor (reset at restart markers)
+    coeff: ?[]i16 = null, // Coefficient buffer for progressive JPEG (64 per block)
+    coeff_w: usize = 0, // Width in 8x8 blocks
+    coeff_h: usize = 0, // Height in 8x8 blocks
+    raw_coeff: ?[]u8 = null, // Raw allocation (for cleanup)
 };
 
 const HuffmanTable = struct {
@@ -255,9 +259,9 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
         return JpegError.InvalidSignature;
     }
 
-    var qt: [4][64]u16 = [_][64]u16{[_]u16{0} ** 64} ** 4;
-    var dc_tables: [4]HuffmanTable = [_]HuffmanTable{.{}} ** 4;
-    var ac_tables: [4]HuffmanTable = [_]HuffmanTable{.{}} ** 4;
+    var quantization_tables: [4][64]u16 = [_][64]u16{[_]u16{0} ** 64} ** 4;
+    var dc_huffman_tables: [4]HuffmanTable = [_]HuffmanTable{.{}} ** 4;
+    var ac_huffman_tables: [4]HuffmanTable = [_]HuffmanTable{.{}} ** 4;
     var components: [4]Component = undefined;
     var num_components: u8 = 0;
     var width: u32 = 0;
@@ -265,8 +269,24 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
     var restart_interval: u16 = 0;
     var max_h: u8 = 1;
     var max_v: u8 = 1;
+    var progressive: bool = false;
+    var spectral_start: u8 = 0;
+    var spectral_end: u8 = 63;
+    var successive_approx_high: u8 = 0;
+    var successive_approx_low: u8 = 0;
 
     var pos: usize = 2;
+
+    // Cleanup coefficient buffers on error
+    errdefer {
+        if (progressive) {
+            for (0..num_components) |component_index| {
+                if (components[component_index].raw_coeff) |raw_allocation| {
+                    allocator.free(raw_allocation);
+                }
+            }
+        }
+    }
 
     // Parse markers
     while (pos < data.len - 1) {
@@ -290,7 +310,22 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
 
         switch (marker) {
             Marker.SOI => {},
-            Marker.EOI => break,
+            Marker.EOI => {
+                // For progressive JPEG, finalize after all scans
+                if (progressive) {
+                    return try finalizeProgressive(
+                        allocator,
+                        width,
+                        height,
+                        num_components,
+                        &components,
+                        &quantization_tables,
+                        max_h,
+                        max_v,
+                    );
+                }
+                break;
+            },
 
             Marker.DQT => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
@@ -314,7 +349,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         // Convert to spatial order using dezigzag table
                         if (pos + 64 > data.len) return JpegError.UnexpectedEndOfData;
                         for (0..64) |i| {
-                            qt[table_id][zigzag_order[i]] = data[pos];
+                            quantization_tables[table_id][zigzag_order[i]] = data[pos];
                             pos += 1;
                         }
                         remaining -= 64;
@@ -322,7 +357,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         // 16-bit quantization values, stored in zigzag order
                         if (pos + 128 > data.len) return JpegError.UnexpectedEndOfData;
                         for (0..64) |i| {
-                            qt[table_id][zigzag_order[i]] = @intCast(readU16(data, pos));
+                            quantization_tables[table_id][zigzag_order[i]] = @intCast(readU16(data, pos));
                             pos += 2;
                         }
                         remaining -= 128;
@@ -363,14 +398,14 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
 
                     const table = HuffmanTable.build(counts, symbols);
                     if (table_class == 0) {
-                        dc_tables[table_id] = table;
+                        dc_huffman_tables[table_id] = table;
                     } else {
-                        ac_tables[table_id] = table;
+                        ac_huffman_tables[table_id] = table;
                     }
                 }
             },
 
-            Marker.SOF0, Marker.SOF1 => {
+            Marker.SOF0, Marker.SOF1, Marker.SOF2 => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                 const length = readU16(data, pos);
                 _ = length;
@@ -389,6 +424,12 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
 
                 if (num_components != 1 and num_components != 3) return JpegError.UnsupportedFormat;
 
+                // Set progressive flag for SOF2
+                if (marker == Marker.SOF2) {
+                    progressive = true;
+                    log.debug("Progressive JPEG detected: SOF2 marker", .{});
+                }
+
                 for (0..num_components) |i| {
                     if (pos + 3 > data.len) return JpegError.UnexpectedEndOfData;
                     components[i] = .{
@@ -406,8 +447,6 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                 }
             },
 
-            Marker.SOF2 => return JpegError.UnsupportedFormat, // Progressive not supported
-
             Marker.DRI => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                 const length = readU16(data, pos);
@@ -420,50 +459,116 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
 
             Marker.SOS => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
-                const length = readU16(data, pos);
+                _ = readU16(data, pos); // length
                 pos += 2;
 
                 if (pos >= data.len) return JpegError.UnexpectedEndOfData;
-                const ns = data[pos];
+                const num_scan_components = data[pos];
                 pos += 1;
 
-                for (0..ns) |_| {
+                for (0..num_scan_components) |_| {
                     if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
-                    const comp_id = data[pos];
+                    const component_id = data[pos];
                     pos += 1;
-                    const tables = data[pos];
+                    const huffman_table_selectors = data[pos];
                     pos += 1;
 
                     // Find matching component
-                    for (0..num_components) |ci| {
-                        if (components[ci].id == comp_id) {
-                            components[ci].dc_table = tables >> 4;
-                            components[ci].ac_table = tables & 0x0F;
+                    for (0..num_components) |component_index| {
+                        if (components[component_index].id == component_id) {
+                            components[component_index].dc_table = huffman_table_selectors >> 4;
+                            components[component_index].ac_table = huffman_table_selectors & 0x0F;
                             break;
                         }
                     }
                 }
 
-                // Skip spectral selection and successive approximation
-                const skip_bytes = @as(usize, length) - 2 - 1 - @as(usize, ns) * 2;
-                pos += skip_bytes;
+                // Parse spectral selection and successive approximation
+                if (pos + 3 > data.len) return JpegError.UnexpectedEndOfData;
+                spectral_start = data[pos];
+                pos += 1;
+                spectral_end = data[pos];
+                pos += 1;
+                const successive_approx = data[pos];
+                pos += 1;
+                successive_approx_high = successive_approx >> 4;
+                successive_approx_low = successive_approx & 0x0F;
 
-                // Now decode the entropy-coded scan data
-                return decodeScanData(
-                    allocator,
-                    data,
-                    pos,
-                    width,
-                    height,
-                    num_components,
-                    &components,
-                    &qt,
-                    &dc_tables,
-                    &ac_tables,
-                    max_h,
-                    max_v,
-                    restart_interval,
-                );
+                if (progressive) {
+                    log.debug("Scan: Ss={} Se={} Ah={} Al={}", .{ spectral_start, spectral_end, successive_approx_high, successive_approx_low });
+
+                    // Allocate coefficient buffers on first scan
+                    if (components[0].coeff == null) {
+                        const mcu_width: u32 = @as(u32, max_h) * 8;
+                        const mcu_height: u32 = @as(u32, max_v) * 8;
+                        const mcus_horizontal = (width + mcu_width - 1) / mcu_width;
+                        const mcus_vertical = (height + mcu_height - 1) / mcu_height;
+
+                        var num_allocated: u8 = 0;
+                        errdefer for (0..num_allocated) |component_index| {
+                            if (components[component_index].raw_coeff) |raw_allocation| {
+                                allocator.free(raw_allocation);
+                                components[component_index].raw_coeff = null;
+                                components[component_index].coeff = null;
+                            }
+                        };
+
+                        for (0..num_components) |component_index| {
+                            const horizontal_scale: u32 = if (num_components == 1) 1 else @as(u32, components[component_index].h_sample);
+                            const vertical_scale: u32 = if (num_components == 1) 1 else @as(u32, components[component_index].v_sample);
+                            components[component_index].coeff_w = @as(usize, mcus_horizontal) * horizontal_scale;
+                            components[component_index].coeff_h = @as(usize, mcus_vertical) * vertical_scale;
+                            const num_blocks = components[component_index].coeff_w * components[component_index].coeff_h;
+                            const coefficient_buffer_bytes = num_blocks * 64 * @sizeOf(i16);
+                            // Allocation for coefficient buffer
+                            const raw_allocation = try allocator.alloc(u8, coefficient_buffer_bytes);
+                            components[component_index].raw_coeff = raw_allocation;
+                            num_allocated += 1;
+                            components[component_index].coeff = @as([*]i16, @ptrCast(@alignCast(raw_allocation.ptr)))[0 .. num_blocks * 64];
+                            // Zero the coefficient buffer
+                            @memset(components[component_index].coeff.?, 0);
+                        }
+                        log.debug("Allocated coefficient buffers for progressive JPEG", .{});
+                    }
+
+                    // Decode progressive scan into coefficient buffers
+                    try decodeScanProgressive(
+                        data,
+                        pos,
+                        width,
+                        height,
+                        num_components,
+                        &components,
+                        &dc_huffman_tables,
+                        &ac_huffman_tables,
+                        max_h,
+                        max_v,
+                        restart_interval,
+                        spectral_start,
+                        spectral_end,
+                        successive_approx_high,
+                        successive_approx_low,
+                    );
+
+                    // Continue parsing markers (don't return yet)
+                } else {
+                    // Baseline JPEG: decode and return immediately
+                    return decodeScanData(
+                        allocator,
+                        data,
+                        pos,
+                        width,
+                        height,
+                        num_components,
+                        &components,
+                        &quantization_tables,
+                        &dc_huffman_tables,
+                        &ac_huffman_tables,
+                        max_h,
+                        max_v,
+                        restart_interval,
+                    );
+                }
             },
 
             else => {
@@ -488,9 +593,9 @@ fn decodeScanData(
     height: u32,
     num_components: u8,
     components: *[4]Component,
-    qt: *const [4][64]u16,
-    dc_tables: *const [4]HuffmanTable,
-    ac_tables: *const [4]HuffmanTable,
+    quantization_tables: *const [4][64]u16,
+    dc_huffman_tables: *const [4]HuffmanTable,
+    ac_huffman_tables: *const [4]HuffmanTable,
     max_h: u8,
     max_v: u8,
     restart_interval: u16,
@@ -541,14 +646,14 @@ fn decodeScanData(
                     for (0..h_blocks) |bh| {
                         var block: [64]i32 = [_]i32{0} ** 64;
 
-                        const dc_ht = &dc_tables[comp.dc_table];
+                        const dc_ht = &dc_huffman_tables[comp.dc_table];
                         const dc_cat = try bits.decodeHuffman(dc_ht);
                         if (dc_cat > 0) {
                             comp.dc_pred += bits.receiveExtend(@intCast(dc_cat));
                         }
                         block[0] = comp.dc_pred;
 
-                        const ac_ht = &ac_tables[comp.ac_table];
+                        const ac_ht = &ac_huffman_tables[comp.ac_table];
                         var k: usize = 1;
                         while (k < 64) {
                             const rs = try bits.decodeHuffman(ac_ht);
@@ -563,7 +668,7 @@ fn decodeScanData(
                             k += 1;
                         }
 
-                        const qtable = &qt[comp.qt_id];
+                        const qtable = &quantization_tables[comp.qt_id];
                         for (0..64) |i| {
                             block[i] *= @as(i32, @intCast(qtable[i]));
                         }
@@ -923,6 +1028,243 @@ fn clampByte(val: i32) u8 {
     if (val < 0) return 0;
     if (val > 255) return 255;
     return @intCast(val);
+}
+
+/// Decode DC coefficient for progressive JPEG
+fn decodeBlockProgDc(
+    bits: *BitReader,
+    coefficients: []i16,
+    dc_huffman_table: *const HuffmanTable,
+    dc_predictor: *i32,
+    successive_approx_low: u8,
+) !void {
+    // DC first scan: decode differential DC coefficient
+    const dc_category = try bits.decodeHuffman(dc_huffman_table);
+    if (dc_category > 0) {
+        dc_predictor.* += bits.receiveExtend(@intCast(dc_category));
+    }
+    // Store DC coefficient shifted by successive_approx_low bits
+    coefficients[0] = @intCast(dc_predictor.* << @intCast(successive_approx_low));
+}
+
+/// Decode AC coefficients for progressive JPEG (first scan only)
+fn decodeBlockProgAc(
+    bits: *BitReader,
+    coefficients: []i16,
+    ac_huffman_table: *const HuffmanTable,
+    spectral_start: u8,
+    spectral_end: u8,
+    successive_approx_low: u8,
+    end_of_block_run: *u16,
+) !void {
+    // Handle EOB run from previous block
+    if (end_of_block_run.* > 0) {
+        end_of_block_run.* -= 1;
+        return;
+    }
+
+    var coefficient_index: usize = spectral_start;
+    while (coefficient_index <= spectral_end) {
+        const huffman_symbol = try bits.decodeHuffman(ac_huffman_table);
+        const zero_run_length = huffman_symbol >> 4;
+        const coefficient_category: u5 = @intCast(huffman_symbol & 0x0F);
+
+        if (coefficient_category == 0) {
+            if (zero_run_length == 15) {
+                // ZRL: skip 16 zeros
+                coefficient_index += 16;
+            } else {
+                // EOB: rest of block is zeros, handle run extension
+                end_of_block_run.* = @as(u16, 1) << @intCast(zero_run_length);
+                if (zero_run_length > 0) {
+                    end_of_block_run.* += @intCast(bits.getBits(@intCast(zero_run_length)));
+                }
+                end_of_block_run.* -= 1;
+                break;
+            }
+        } else {
+            // Skip zero_run_length zeros, then store coefficient
+            coefficient_index += zero_run_length;
+            if (coefficient_index > spectral_end) break;
+            const coefficient_value = bits.receiveExtend(coefficient_category);
+            coefficients[zigzag_order[coefficient_index]] = @intCast(coefficient_value << @intCast(successive_approx_low));
+            coefficient_index += 1;
+        }
+    }
+}
+
+/// Decode a progressive JPEG scan into coefficient buffers
+fn decodeScanProgressive(
+    data: []const u8,
+    scan_start: usize,
+    width: u32,
+    height: u32,
+    num_components: u8,
+    components: *[4]Component,
+    dc_huffman_tables: *const [4]HuffmanTable,
+    ac_huffman_tables: *const [4]HuffmanTable,
+    max_horizontal_sampling: u8,
+    max_vertical_sampling: u8,
+    restart_interval: u16,
+    spectral_start: u8,
+    spectral_end: u8,
+    successive_approx_high: u8,
+    successive_approx_low: u8,
+) !void {
+    if (width == 0 or height == 0) return JpegError.InvalidFrameHeader;
+
+    // Skip refinement scans for now (Phase 2/4)
+    if (successive_approx_high > 0) {
+        log.debug("Skipping refinement scan: Ss={} Se={} Ah={} Al={}", .{ spectral_start, spectral_end, successive_approx_high, successive_approx_low });
+        return;
+    }
+
+    const mcu_width: u32 = @as(u32, max_horizontal_sampling) * 8;
+    const mcu_height: u32 = @as(u32, max_vertical_sampling) * 8;
+    const mcus_horizontal = (width + mcu_width - 1) / mcu_width;
+    const mcus_vertical = (height + mcu_height - 1) / mcu_height;
+
+    var bits = BitReader.init(data[scan_start..]);
+    var mcu_count: u32 = 0;
+    var end_of_block_run: u16 = 0;
+
+    const is_dc_scan = (spectral_start == 0);
+
+    for (0..mcus_vertical) |mcu_row| {
+        for (0..mcus_horizontal) |mcu_col| {
+            if (restart_interval > 0 and mcu_count > 0 and mcu_count % restart_interval == 0) {
+                for (0..num_components) |component_index| {
+                    components[component_index].dc_pred = 0;
+                }
+                end_of_block_run = 0;
+                bits.bits_left = 0;
+                bits.bit_buf = 0;
+                skipRestartMarker(&bits);
+            }
+
+            for (0..num_components) |component_index| {
+                const component = &components[component_index];
+                const horizontal_blocks: usize = if (num_components == 1) 1 else @as(usize, component.h_sample);
+                const vertical_blocks: usize = if (num_components == 1) 1 else @as(usize, component.v_sample);
+
+                for (0..vertical_blocks) |vertical_block_index| {
+                    for (0..horizontal_blocks) |horizontal_block_index| {
+                        const block_x = @as(usize, @intCast(mcu_col)) * horizontal_blocks + horizontal_block_index;
+                        const block_y = @as(usize, @intCast(mcu_row)) * vertical_blocks + vertical_block_index;
+                        const block_index = block_y * component.coeff_w + block_x;
+                        const coefficient_offset = block_index * 64;
+
+                        if (component.coeff == null) return JpegError.InvalidData;
+                        const coefficients = component.coeff.?[coefficient_offset..][0..64];
+
+                        if (is_dc_scan) {
+                            const dc_huffman_table = &dc_huffman_tables[component.dc_table];
+                            try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
+                        } else {
+                            const ac_huffman_table = &ac_huffman_tables[component.ac_table];
+                            try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+                        }
+                    }
+                }
+            }
+
+            mcu_count += 1;
+        }
+    }
+}
+
+/// Finalize progressive JPEG: dequantize and IDCT all blocks, assemble image
+fn finalizeProgressive(
+    allocator: Allocator,
+    width: u32,
+    height: u32,
+    num_components: u8,
+    components: *[4]Component,
+    quantization_tables: *const [4][64]u16,
+    max_horizontal_sampling: u8,
+    max_vertical_sampling: u8,
+) !Image {
+    const mcu_width: u32 = @as(u32, max_horizontal_sampling) * 8;
+    const mcu_height: u32 = @as(u32, max_vertical_sampling) * 8;
+    const mcus_horizontal = (width + mcu_width - 1) / mcu_width;
+    const mcus_vertical = (height + mcu_height - 1) / mcu_height;
+
+    // Allocate component buffers at native resolution
+    var component_buffers: [4][]u8 = undefined;
+    var component_stride: [4]usize = undefined;
+    var component_rows: [4]usize = undefined;
+    var num_allocated: u8 = 0;
+    errdefer for (0..num_allocated) |component_index| allocator.free(component_buffers[component_index]);
+
+    for (0..num_components) |component_index| {
+        const horizontal_scale: u32 = if (num_components == 1) 1 else @as(u32, components[component_index].h_sample);
+        const vertical_scale: u32 = if (num_components == 1) 1 else @as(u32, components[component_index].v_sample);
+        component_stride[component_index] = @as(usize, mcus_horizontal) * horizontal_scale * 8;
+        component_rows[component_index] = @as(usize, mcus_vertical) * vertical_scale * 8;
+        component_buffers[component_index] = try allocator.alloc(u8, component_stride[component_index] * component_rows[component_index]);
+        num_allocated += 1;
+    }
+
+    // Dequantize and IDCT all blocks
+    for (0..num_components) |component_index| {
+        const component = &components[component_index];
+        const quantization_table = &quantization_tables[component.qt_id];
+
+        if (component.coeff == null) return JpegError.InvalidData;
+
+        for (0..component.coeff_h) |block_y| {
+            for (0..component.coeff_w) |block_x| {
+                const block_index = block_y * component.coeff_w + block_x;
+                const coefficient_offset = block_index * 64;
+                const coefficients = component.coeff.?[coefficient_offset..][0..64];
+
+                // Dequantize: multiply by quantization table
+                var dequantized_block: [64]i32 = undefined;
+                for (0..64) |i| {
+                    dequantized_block[i] = @as(i32, coefficients[i]) * @as(i32, @intCast(quantization_table[i]));
+                }
+
+                // IDCT
+                var output: [64]u8 = undefined;
+                idct(&dequantized_block, &output);
+
+                // Write to component buffer
+                const stride = component_stride[component_index];
+                for (0..8) |row| {
+                    const destination_offset = (block_y * 8 + row) * stride + block_x * 8;
+                    for (0..8) |col| {
+                        component_buffers[component_index][destination_offset + col] = output[row * 8 + col];
+                    }
+                }
+            }
+        }
+    }
+
+    // Assemble output image with chroma resampling + YCbCr→RGB
+    var img = try Image.init(allocator, width, height, num_components);
+    errdefer img.deinit();
+
+    if (num_components == 1) {
+        for (0..@as(usize, height)) |y| {
+            const source = component_buffers[0][y * component_stride[0] ..][0..width];
+            const destination = img.data[y * @as(usize, width) ..][0..width];
+            @memcpy(destination, source);
+        }
+    } else {
+        try resampleAndConvert(allocator, &img, &component_buffers, &component_stride, &component_rows, max_horizontal_sampling, max_vertical_sampling, components, num_components);
+    }
+
+    // Free component buffers and coefficient buffers
+    for (0..num_allocated) |component_index| allocator.free(component_buffers[component_index]);
+    for (0..num_components) |component_index| {
+        if (components[component_index].raw_coeff) |raw| {
+            allocator.free(raw);
+            components[component_index].raw_coeff = null;
+            components[component_index].coeff = null;
+        }
+    }
+
+    return img;
 }
 
 fn readU16(data: []const u8, pos: usize) u32 {

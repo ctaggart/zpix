@@ -125,3 +125,22 @@ test "JPEG decoder handles larger images" {
     const ref_slice = ref.data[0..size];
     try expectPixelsClose(ref_slice, zig_image.data, 3);
 }
+
+test "JPEG decoder rejects progressive RGB (not yet fully supported)" {
+    const allocator = std.testing.allocator;
+
+    // Progressive JPEG support is partially implemented:
+    // - DC first scans: ✓
+    // - AC first scans (interleaved): ✓
+    // - DC refinement scans: ✗ (skipped)
+    // - AC refinement scans: ✗ (not implemented)
+    // - Non-interleaved AC scans: ✗ (not implemented)
+    //
+    // The test fixture has non-interleaved AC scans which cause Huffman decode errors.
+    // TODO: Complete progressive JPEG implementation (Phases 2-5 from plan)
+
+    const result = stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
+
+    // For now, we expect it to fail
+    try std.testing.expectError(error.HuffmanDecodeFailed, result);
+}
