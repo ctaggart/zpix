@@ -126,21 +126,26 @@ test "JPEG decoder handles larger images" {
     try expectPixelsClose(ref_slice, zig_image.data, 3);
 }
 
-test "JPEG decoder rejects progressive RGB (not yet fully supported)" {
+test "JPEG decoder handles progressive RGB (with limitations)" {
     const allocator = std.testing.allocator;
 
     // Progressive JPEG support is partially implemented:
     // - DC first scans: ✓
-    // - AC first scans (interleaved): ✓
+    // - AC first scans (interleaved and non-interleaved): ✓
     // - DC refinement scans: ✗ (skipped)
-    // - AC refinement scans: ✗ (not implemented)
-    // - Non-interleaved AC scans: ✗ (not implemented)
+    // - AC refinement scans: ✗ (skipped)
     //
-    // The test fixture has non-interleaved AC scans which cause Huffman decode errors.
-    // TODO: Complete progressive JPEG implementation (Phases 2-5 from plan)
+    // Refinement scans add precision bits. Skipping them results in lower quality
+    // but the image still loads correctly with reduced precision.
 
-    const result = stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
+    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
+    defer img.deinit();
 
-    // For now, we expect it to fail
-    try std.testing.expectError(error.HuffmanDecodeFailed, result);
+    // Verify dimensions
+    try std.testing.expectEqual(@as(u32, 4), img.width);
+    try std.testing.expectEqual(@as(u32, 4), img.height);
+    try std.testing.expectEqual(@as(u8, 3), img.channels);
+
+    // Note: We don't compare pixels with stb_image here because we skip refinement
+    // scans, resulting in lower quality. The image is valid but less precise.
 }

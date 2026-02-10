@@ -466,6 +466,10 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                 const num_scan_components = data[pos];
                 pos += 1;
 
+                // Track which components are in this scan (for non-interleaved scans)
+                var scan_component_indices: [4]u8 = undefined;
+                var scan_components_count: u8 = 0;
+
                 for (0..num_scan_components) |_| {
                     if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                     const component_id = data[pos];
@@ -478,6 +482,8 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         if (components[component_index].id == component_id) {
                             components[component_index].dc_table = huffman_table_selectors >> 4;
                             components[component_index].ac_table = huffman_table_selectors & 0x0F;
+                            scan_component_indices[scan_components_count] = @intCast(component_index);
+                            scan_components_count += 1;
                             break;
                         }
                     }
@@ -548,6 +554,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         spectral_end,
                         successive_approx_high,
                         successive_approx_low,
+                        scan_component_indices[0..scan_components_count],
                     );
 
                     // Continue parsing markers (don't return yet)
@@ -1110,6 +1117,7 @@ fn decodeScanProgressive(
     spectral_end: u8,
     successive_approx_high: u8,
     successive_approx_low: u8,
+    scan_component_indices: []const u8,
 ) !void {
     if (width == 0 or height == 0) return JpegError.InvalidFrameHeader;
 
@@ -1129,46 +1137,78 @@ fn decodeScanProgressive(
     var end_of_block_run: u16 = 0;
 
     const is_dc_scan = (spectral_start == 0);
+    const is_interleaved = scan_component_indices.len > 1;
 
-    for (0..mcus_vertical) |mcu_row| {
-        for (0..mcus_horizontal) |mcu_col| {
-            if (restart_interval > 0 and mcu_count > 0 and mcu_count % restart_interval == 0) {
-                for (0..num_components) |component_index| {
-                    components[component_index].dc_pred = 0;
-                }
+    // For non-interleaved scans (typically AC scans with single component),
+    // process blocks sequentially for that component only
+    if (!is_interleaved) {
+        const component_index = scan_component_indices[0];
+        const component = &components[component_index];
+        const total_blocks = component.coeff_w * component.coeff_h;
+
+        for (0..total_blocks) |block_index| {
+            if (restart_interval > 0 and block_index > 0 and block_index % restart_interval == 0) {
+                component.dc_pred = 0;
                 end_of_block_run = 0;
                 bits.bits_left = 0;
                 bits.bit_buf = 0;
                 skipRestartMarker(&bits);
             }
 
-            for (0..num_components) |component_index| {
-                const component = &components[component_index];
-                const horizontal_blocks: usize = if (num_components == 1) 1 else @as(usize, component.h_sample);
-                const vertical_blocks: usize = if (num_components == 1) 1 else @as(usize, component.v_sample);
+            const coefficient_offset = block_index * 64;
+            if (component.coeff == null) return JpegError.InvalidData;
+            const coefficients = component.coeff.?[coefficient_offset..][0..64];
 
-                for (0..vertical_blocks) |vertical_block_index| {
-                    for (0..horizontal_blocks) |horizontal_block_index| {
-                        const block_x = @as(usize, @intCast(mcu_col)) * horizontal_blocks + horizontal_block_index;
-                        const block_y = @as(usize, @intCast(mcu_row)) * vertical_blocks + vertical_block_index;
-                        const block_index = block_y * component.coeff_w + block_x;
-                        const coefficient_offset = block_index * 64;
+            if (is_dc_scan) {
+                const dc_huffman_table = &dc_huffman_tables[component.dc_table];
+                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
+            } else {
+                const ac_huffman_table = &ac_huffman_tables[component.ac_table];
+                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+            }
+        }
+    } else {
+        // Interleaved scan: process MCUs with multiple components
+        for (0..mcus_vertical) |mcu_row| {
+            for (0..mcus_horizontal) |mcu_col| {
+                if (restart_interval > 0 and mcu_count > 0 and mcu_count % restart_interval == 0) {
+                    for (scan_component_indices) |component_index| {
+                        components[component_index].dc_pred = 0;
+                    }
+                    end_of_block_run = 0;
+                    bits.bits_left = 0;
+                    bits.bit_buf = 0;
+                    skipRestartMarker(&bits);
+                }
 
-                        if (component.coeff == null) return JpegError.InvalidData;
-                        const coefficients = component.coeff.?[coefficient_offset..][0..64];
+                for (scan_component_indices) |component_index| {
+                    const component = &components[component_index];
+                    const horizontal_blocks: usize = if (num_components == 1) 1 else @as(usize, component.h_sample);
+                    const vertical_blocks: usize = if (num_components == 1) 1 else @as(usize, component.v_sample);
 
-                        if (is_dc_scan) {
-                            const dc_huffman_table = &dc_huffman_tables[component.dc_table];
-                            try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
-                        } else {
-                            const ac_huffman_table = &ac_huffman_tables[component.ac_table];
-                            try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+                    for (0..vertical_blocks) |vertical_block_index| {
+                        for (0..horizontal_blocks) |horizontal_block_index| {
+                            const block_x = @as(usize, @intCast(mcu_col)) * horizontal_blocks + horizontal_block_index;
+                            const block_y = @as(usize, @intCast(mcu_row)) * vertical_blocks + vertical_block_index;
+                            const block_index = block_y * component.coeff_w + block_x;
+                            const coefficient_offset = block_index * 64;
+
+                            if (component.coeff == null) return JpegError.InvalidData;
+                            const coefficients = component.coeff.?[coefficient_offset..][0..64];
+
+                            if (is_dc_scan) {
+                                const dc_huffman_table = &dc_huffman_tables[component.dc_table];
+                                try decodeBlockProgDc(&bits, coefficients, dc_huffman_table, &component.dc_pred, successive_approx_low);
+                            } else {
+                                const ac_huffman_table = &ac_huffman_tables[component.ac_table];
+                                try decodeBlockProgAc(&bits, coefficients, ac_huffman_table, spectral_start, spectral_end, successive_approx_low, &end_of_block_run);
+                            }
                         }
                     }
                 }
-            }
 
-            mcu_count += 1;
+                mcu_count += 1;
+            }
         }
     }
 }
