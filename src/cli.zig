@@ -1,8 +1,8 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 const usage =
-    \\Usage: stbz <command> [options]
+    \\Usage: zpix <command> [options]
     \\
     \\Commands:
     \\  crop <input> <output> <x> <y> <width> <height>
@@ -21,11 +21,11 @@ const usage =
     \\      Flip image (direction: h for horizontal, v for vertical)
     \\
     \\Examples:
-    \\  stbz crop photo.png cropped.png 100 100 200 200
-    \\  stbz resize photo.png small.png 640 480
-    \\  stbz thumbnail photo.png thumb.png 128
-    \\  stbz rotate photo.png rotated.png 90
-    \\  stbz flip photo.png flipped.png h
+    \\  zpix crop photo.png cropped.png 100 100 200 200
+    \\  zpix resize photo.png small.png 640 480
+    \\  zpix thumbnail photo.png thumb.png 128
+    \\  zpix rotate photo.png rotated.png 90
+    \\  zpix flip photo.png flipped.png h
     \\
 ;
 
@@ -56,15 +56,15 @@ fn parseIntOrExit(value: []const u8, field_name: []const u8) u32 {
     };
 }
 
-fn loadImageOrExit(allocator: std.mem.Allocator, path: []const u8) stbz.Image {
-    return stbz.loadFile(allocator, path) catch |err| {
+fn loadImageOrExit(allocator: std.mem.Allocator, path: []const u8) zpix.Image {
+    return zpix.loadFile(allocator, path) catch |err| {
         printErrFmt("Error loading {s}: {}\n", .{ path, err });
         std.process.exit(1);
     };
 }
 
-fn saveImageOrExit(path: []const u8, img: *const stbz.Image) void {
-    stbz.saveFile(img, path) catch |err| {
+fn saveImageOrExit(path: []const u8, img: *const zpix.Image) void {
+    zpix.saveFile(img, path) catch |err| {
         printErrFmt("Error saving {s}: {}\n", .{ path, err });
         std.process.exit(1);
     };

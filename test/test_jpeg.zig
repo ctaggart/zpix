@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // C reference implementation bindings
 const c = @cImport({
@@ -61,7 +61,7 @@ test "JPEG decoder produces same output as stb_image for RGB" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var zig_image = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -86,7 +86,7 @@ test "JPEG decoder produces same output as stb_image for grayscale" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadJpegFile(allocator, "test/fixtures/test_gray_8x8.jpg");
+    var zig_image = try zpix.loadJpegFile(allocator, "test/fixtures/test_gray_8x8.jpg");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -111,7 +111,7 @@ test "JPEG decoder handles larger images" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
+    var zig_image = try zpix.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -145,7 +145,7 @@ test "JPEG decoder handles progressive RGB" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
     defer img.deinit();
 
     // Compare dimensions

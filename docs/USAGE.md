@@ -1,6 +1,6 @@
-# stbz Usage Guide
+# zpix Usage Guide
 
-stbz is a Zig library for loading, manipulating, and saving PNG and JPEG images. It provides both high-level convenience functions and low-level streaming APIs for memory-constrained environments.
+zpix is a Zig library for loading, manipulating, and saving PNG and JPEG images. It provides both high-level convenience functions and low-level streaming APIs for memory-constrained environments.
 
 ## Table of Contents
 
@@ -15,15 +15,15 @@ stbz is a Zig library for loading, manipulating, and saving PNG and JPEG images.
 
 ## Installation
 
-Add stbz as a dependency in your `build.zig.zon`:
+Add zpix as a dependency in your `build.zig.zon`:
 
 ```zig
 .{
     .name = "my-project",
     .version = "0.1.0",
     .dependencies = .{
-        .stbz = .{
-            .url = "https://github.com/yourusername/stbz/archive/main.tar.gz",
+        .zpix = .{
+            .url = "https://github.com/yourusername/zpix/archive/main.tar.gz",
             .hash = "...",
         },
     },
@@ -33,11 +33,11 @@ Add stbz as a dependency in your `build.zig.zon`:
 Then in your `build.zig`:
 
 ```zig
-const stbz = b.dependency("stbz", .{
+const zpix = b.dependency("zpix", .{
     .target = target,
     .optimize = optimize,
 });
-exe.root_module.addImport("stbz", stbz.module("stbz"));
+exe.root_module.addImport("zpix", zpix.module("zpix"));
 ```
 
 ## Quick Start
@@ -46,7 +46,7 @@ exe.root_module.addImport("stbz", stbz.module("stbz"));
 
 ```zig
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -54,7 +54,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Load a PNG image
-    var img = try stbz.loadPngFile(allocator, "input.png");
+    var img = try zpix.loadPngFile(allocator, "input.png");
     defer img.deinit();
 
     std.debug.print("Image: {}x{} with {} channels\n", .{
@@ -64,7 +64,7 @@ pub fn main() !void {
     });
 
     // Save to JPEG format
-    try stbz.savePngFile(&img, "output.png");
+    try zpix.savePngFile(&img, "output.png");
 }
 ```
 
@@ -166,7 +166,7 @@ const buf = try allocator.alloc(u8, 65536);
 defer allocator.free(buf);
 var file_reader = file.reader(buf);
 
-var img = try stbz.decodePng(allocator, &file_reader.interface);
+var img = try zpix.decodePng(allocator, &file_reader.interface);
 defer img.deinit();
 ```
 
@@ -229,7 +229,7 @@ var out_buf: [8192]u8 = undefined;
 var in_reader = input.reader(&in_buf);
 var out_writer = output.writer(&out_buf);
 
-try stbz.streamingResize(
+try zpix.streamingResize(
     allocator,
     &in_reader.interface,
     &out_writer.interface,
@@ -264,7 +264,7 @@ pub const PngStreamingDecoder = struct {
 Example:
 
 ```zig
-var decoder = try stbz.PngStreamingDecoder.init(allocator, reader);
+var decoder = try zpix.PngStreamingDecoder.init(allocator, reader);
 defer decoder.deinit();
 
 const width = decoder.width();
@@ -312,7 +312,7 @@ pub const PngRowWriter = struct {
 All image operations return errors. Handle them explicitly:
 
 ```zig
-const img = stbz.loadPngFile(allocator, "input.png") catch |err| {
+const img = zpix.loadPngFile(allocator, "input.png") catch |err| {
     std.debug.print("Failed to load image: {}\n", .{err});
     return err;
 };
@@ -341,7 +341,7 @@ const pixel_data = img.data[offset..][0..img.channels];
 ### Creating Images from Scratch
 
 ```zig
-var img = try stbz.Image.init(allocator, 800, 600, 4);
+var img = try zpix.Image.init(allocator, 800, 600, 4);
 defer img.deinit();
 
 // Fill with white
@@ -355,19 +355,19 @@ for (100..200) |y| {
     }
 }
 
-try stbz.savePngFile(&img, "output.png");
+try zpix.savePngFile(&img, "output.png");
 ```
 
 ### Custom Allocators
 
-stbz supports custom allocators throughout:
+zpix supports custom allocators throughout:
 
 ```zig
 var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 defer arena.deinit();
 const allocator = arena.allocator();
 
-var img = try stbz.loadPngFile(allocator, "input.png");
+var img = try zpix.loadPngFile(allocator, "input.png");
 // No need to call img.deinit() - arena frees everything
 ```
 
@@ -377,7 +377,7 @@ var img = try stbz.loadPngFile(allocator, "input.png");
 const response = try http_client.get("https://example.com/image.png");
 defer response.deinit();
 
-var img = try stbz.loadPngMemory(allocator, response.body);
+var img = try zpix.loadPngMemory(allocator, response.body);
 defer img.deinit();
 ```
 
@@ -387,7 +387,7 @@ Progressive JPEG images are decoded automatically:
 
 ```zig
 // Loads both baseline and progressive JPEGs
-var img = try stbz.loadJpegFile(allocator, "progressive.jpg");
+var img = try zpix.loadJpegFile(allocator, "progressive.jpg");
 defer img.deinit();
 ```
 

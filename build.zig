@@ -5,20 +5,20 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     // Main library module
-    const stbz_mod = b.addModule("stbz", .{
-        .root_source_file = b.path("src/stbz.zig"),
+    const zpix_mod = b.addModule("zpix", .{
+        .root_source_file = b.path("src/zpix.zig"),
     });
 
     // CLI executable
     const exe = b.addExecutable(.{
-        .name = "stbz",
+        .name = "zpix",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/cli.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
-    exe.root_module.addImport("stbz", stbz_mod);
+    exe.root_module.addImport("zpix", zpix_mod);
     exe.root_module.addIncludePath(b.path("reference"));
     exe.root_module.addCSourceFile(.{
         .file = b.path("reference/ref_impl.c"),
@@ -37,11 +37,11 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the CLI");
     run_step.dependOn(&run_cmd.step);
 
-    // Unit tests for stbz library
+    // Unit tests for zpix library
     const unit_tests = b.addTest(.{
-        .name = "stbz-tests",
+        .name = "zpix-tests",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/stbz.zig"),
+            .root_source_file = b.path("src/zpix.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    jpeg_unit_tests.root_module.addImport("stbz", stbz_mod);
+    jpeg_unit_tests.root_module.addImport("zpix", zpix_mod);
     const run_jpeg_unit_tests = b.addRunArtifact(jpeg_unit_tests);
 
     // Error handling tests (corrupt/invalid files)
@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    error_tests.root_module.addImport("stbz", stbz_mod);
+    error_tests.root_module.addImport("zpix", zpix_mod);
     const run_error_tests = b.addRunArtifact(error_tests);
 
     // Comparison tests (Zig vs C reference)
@@ -82,7 +82,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    compare_tests.root_module.addImport("stbz", stbz_mod);
+    compare_tests.root_module.addImport("zpix", zpix_mod);
     compare_tests.root_module.addIncludePath(b.path("reference"));
     compare_tests.root_module.addCSourceFile(.{
         .file = b.path("reference/ref_impl.c"),
@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    jpeg_tests.root_module.addImport("stbz", stbz_mod);
+    jpeg_tests.root_module.addImport("zpix", zpix_mod);
     jpeg_tests.root_module.addIncludePath(b.path("reference"));
     jpeg_tests.root_module.addCSourceFile(.{
         .file = b.path("reference/ref_impl.c"),
@@ -120,7 +120,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    jpeg_encode_tests.root_module.addImport("stbz", stbz_mod);
+    jpeg_encode_tests.root_module.addImport("zpix", zpix_mod);
     jpeg_encode_tests.root_module.addIncludePath(b.path("reference"));
     jpeg_encode_tests.root_module.addCSourceFile(.{
         .file = b.path("reference/ref_impl.c"),
@@ -157,7 +157,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    bulk_test.root_module.addImport("stbz", stbz_mod);
+    bulk_test.root_module.addImport("zpix", zpix_mod);
     const run_bulk_test = b.addRunArtifact(bulk_test);
     const bulk_step = b.step("test-bulk", "Run bulk image load test against ~/RPG/Eberron/Images/");
     bulk_step.dependOn(&run_bulk_test.step);
@@ -171,7 +171,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
-    large_test.root_module.addImport("stbz", stbz_mod);
+    large_test.root_module.addImport("zpix", zpix_mod);
     const run_large_test = b.addRunArtifact(large_test);
     const large_step = b.step("test-large", "Run large image streaming test");
     large_step.dependOn(&run_large_test.step);
@@ -185,7 +185,7 @@ pub fn build(b: *std.Build) void {
             .optimize = .ReleaseFast,
         }),
     });
-    bench.root_module.addImport("stbz", stbz_mod);
+    bench.root_module.addImport("zpix", zpix_mod);
     bench.root_module.addIncludePath(b.path("reference"));
     bench.root_module.addCSourceFile(.{
         .file = b.path("reference/ref_impl.c"),
@@ -200,7 +200,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_bench.addArgs(args);
     }
-    const bench_step = b.step("bench", "Run benchmarks (stbz vs stb_image)");
+    const bench_step = b.step("bench", "Run benchmarks (zpix vs stb_image)");
     bench_step.dependOn(&run_bench.step);
 
     // Format step
@@ -214,7 +214,7 @@ pub fn build(b: *std.Build) void {
     const check = b.addTest(.{
         .name = "check",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/stbz.zig"),
+            .root_source_file = b.path("src/zpix.zig"),
             .target = target,
             .optimize = optimize,
         }),
@@ -226,7 +226,7 @@ pub fn build(b: *std.Build) void {
     const docs = b.addTest(.{
         .name = "docs",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/stbz.zig"),
+            .root_source_file = b.path("src/zpix.zig"),
             .target = target,
             .optimize = optimize,
         }),

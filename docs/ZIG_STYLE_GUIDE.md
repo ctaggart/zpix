@@ -540,7 +540,7 @@ for (chunks) |chunk| {
 4. **Context matters** - `img` might be fine in a 10-line function, but `image` is better in a large file
 5. **Domain expertise** - Standard abbreviations like `rgba`, `yuv`, `dct` are clearer to domain experts than spelled out versions
 
-### Examples from stbz
+### Examples from zpix
 
 ```zig
 // Good: Descriptive function parameters

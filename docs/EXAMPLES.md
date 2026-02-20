@@ -1,4 +1,4 @@
-# stbz Examples
+# zpix Examples
 
 This document provides practical code examples for common use cases.
 
@@ -17,7 +17,7 @@ This document provides practical code examples for common use cases.
 
 ```zig
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -25,7 +25,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Load PNG
-    var img = try stbz.loadPngFile(allocator, "input.png");
+    var img = try zpix.loadPngFile(allocator, "input.png");
     defer img.deinit();
 
     std.debug.print("Loaded: {}x{} with {} channels\n", .{
@@ -35,7 +35,7 @@ pub fn main() !void {
     });
 
     // Save PNG
-    try stbz.savePngFile(&img, "output.png");
+    try zpix.savePngFile(&img, "output.png");
 }
 ```
 
@@ -47,28 +47,28 @@ pub fn convertJpegToPng(
     input_path: []const u8,
     output_path: []const u8,
 ) !void {
-    var img = try stbz.loadJpegFile(allocator, input_path);
+    var img = try zpix.loadJpegFile(allocator, input_path);
     defer img.deinit();
 
-    try stbz.savePngFile(&img, output_path);
+    try zpix.savePngFile(&img, output_path);
 }
 ```
 
 ### Load from Memory
 
 ```zig
-pub fn loadFromBuffer(allocator: Allocator, data: []const u8) !stbz.Image {
+pub fn loadFromBuffer(allocator: Allocator, data: []const u8) !zpix.Image {
     // Auto-detect format based on signature
     if (data.len < 8) return error.InvalidData;
 
     // PNG signature: 0x89 0x50 0x4E 0x47
     if (std.mem.eql(u8, data[0..4], &[_]u8{0x89, 0x50, 0x4E, 0x47})) {
-        return stbz.loadPngMemory(allocator, data);
+        return zpix.loadPngMemory(allocator, data);
     }
 
     // JPEG signature: 0xFF 0xD8
     if (std.mem.eql(u8, data[0..2], &[_]u8{0xFF, 0xD8})) {
-        return stbz.loadJpegMemory(allocator, data);
+        return zpix.loadJpegMemory(allocator, data);
     }
 
     return error.UnknownFormat;
@@ -86,7 +86,7 @@ pub fn createThumbnail(
     output_path: []const u8,
     max_size: u32,
 ) !void {
-    var img = try stbz.loadPngFile(allocator, input_path);
+    var img = try zpix.loadPngFile(allocator, input_path);
     defer img.deinit();
 
     // Calculate dimensions maintaining aspect ratio
@@ -112,7 +112,7 @@ pub fn createThumbnail(
     var thumbnail = try img.resize(new_width, new_height);
     defer thumbnail.deinit();
 
-    try stbz.savePngFile(&thumbnail, output_path);
+    try zpix.savePngFile(&thumbnail, output_path);
 }
 ```
 
@@ -124,13 +124,13 @@ pub fn rotateImage(
     input_path: []const u8,
     output_path: []const u8,
 ) !void {
-    var img = try stbz.loadPngFile(allocator, input_path);
+    var img = try zpix.loadPngFile(allocator, input_path);
     defer img.deinit();
 
     var rotated = try img.rotate90();
     defer rotated.deinit();
 
-    try stbz.savePngFile(&rotated, output_path);
+    try zpix.savePngFile(&rotated, output_path);
 }
 ```
 
@@ -138,10 +138,10 @@ pub fn rotateImage(
 
 ```zig
 pub fn cropCenter(
-    img: *const stbz.Image,
+    img: *const zpix.Image,
     crop_width: u32,
     crop_height: u32,
-) !stbz.Image {
+) !zpix.Image {
     if (crop_width > img.width or crop_height > img.height) {
         return error.CropTooLarge;
     }
@@ -161,13 +161,13 @@ pub fn createMirror(
     input_path: []const u8,
     output_path: []const u8,
 ) !void {
-    var img = try stbz.loadPngFile(allocator, input_path);
+    var img = try zpix.loadPngFile(allocator, input_path);
     defer img.deinit();
 
     var mirrored = try img.flipHorizontal();
     defer mirrored.deinit();
 
-    try stbz.savePngFile(&mirrored, output_path);
+    try zpix.savePngFile(&mirrored, output_path);
 }
 ```
 
@@ -181,8 +181,8 @@ pub fn createSolidColor(
     width: u32,
     height: u32,
     color: [4]u8, // RGBA
-) !stbz.Image {
-    var img = try stbz.Image.init(allocator, width, height, 4);
+) !zpix.Image {
+    var img = try zpix.Image.init(allocator, width, height, 4);
     errdefer img.deinit();
 
     var i: usize = 0;
@@ -198,7 +198,7 @@ pub fn createSolidColor(
 
 ```zig
 pub fn drawRectangle(
-    img: *stbz.Image,
+    img: *zpix.Image,
     x: u32,
     y: u32,
     width: u32,
@@ -221,12 +221,12 @@ pub fn drawRectangle(
 ### Convert to Grayscale
 
 ```zig
-pub fn convertToGrayscale(img: *const stbz.Image) !stbz.Image {
+pub fn convertToGrayscale(img: *const zpix.Image) !zpix.Image {
     if (img.channels != 3 and img.channels != 4) {
         return error.UnsupportedChannels;
     }
 
-    var gray = try stbz.Image.init(img.allocator, img.width, img.height, 1);
+    var gray = try zpix.Image.init(img.allocator, img.width, img.height, 1);
     errdefer gray.deinit();
 
     for (0..img.height) |y| {
@@ -251,7 +251,7 @@ pub fn convertToGrayscale(img: *const stbz.Image) !stbz.Image {
 ### Apply Brightness Adjustment
 
 ```zig
-pub fn adjustBrightness(img: *stbz.Image, adjustment: i16) void {
+pub fn adjustBrightness(img: *zpix.Image, adjustment: i16) void {
     for (img.data) |*pixel| {
         const new_value = @as(i32, pixel.*) + adjustment;
         pixel.* = @intCast(std.math.clamp(new_value, 0, 255));
@@ -267,8 +267,8 @@ pub fn createCheckerboard(
     width: u32,
     height: u32,
     square_size: u32,
-) !stbz.Image {
-    var img = try stbz.Image.init(allocator, width, height, 4);
+) !zpix.Image {
+    var img = try zpix.Image.init(allocator, width, height, 4);
     errdefer img.deinit();
 
     const white = [_]u8{ 255, 255, 255, 255 };
@@ -312,7 +312,7 @@ pub fn createLargeThumbnail(
     var out_writer = output_file.writer(&out_buf);
 
     // Use streaming resize to avoid loading entire image
-    try stbz.streamingResize(
+    try zpix.streamingResize(
         allocator,
         &in_reader.interface,
         &out_writer.interface,
@@ -340,7 +340,7 @@ pub fn processRowByRow(
     var in_reader = input_file.reader(&in_buf);
 
     // Initialize streaming decoder
-    var decoder = try stbz.PngStreamingDecoder.init(allocator, &in_reader.interface);
+    var decoder = try zpix.PngStreamingDecoder.init(allocator, &in_reader.interface);
     defer decoder.deinit();
 
     const width = decoder.width();
@@ -355,7 +355,7 @@ pub fn processRowByRow(
     var out_writer = output_file.writer(&out_buf);
 
     // Initialize row writer
-    var writer = try stbz.PngRowWriter.init(
+    var writer = try zpix.PngRowWriter.init(
         allocator,
         &out_writer.interface,
         width,
@@ -388,8 +388,8 @@ pub fn processRowByRow(
 pub fn loadImageRobust(
     allocator: Allocator,
     path: []const u8,
-) !stbz.Image {
-    const img = stbz.loadPngFile(allocator, path) catch |err| {
+) !zpix.Image {
+    const img = zpix.loadPngFile(allocator, path) catch |err| {
         switch (err) {
             error.FileNotFound => {
                 std.log.err("Image file not found: {s}", .{path});
@@ -399,7 +399,7 @@ pub fn loadImageRobust(
                 std.log.err("Not a valid PNG file: {s}", .{path});
 
                 // Try loading as JPEG
-                return stbz.loadJpegFile(allocator, path) catch {
+                return zpix.loadJpegFile(allocator, path) catch {
                     std.log.err("Not a valid JPEG file either", .{});
                     return error.InvalidSignature;
                 };
@@ -465,13 +465,13 @@ fn processFile(
     defer allocator.free(output_path);
 
     // Load and resize
-    var img = try stbz.loadPngFile(allocator, input_path);
+    var img = try zpix.loadPngFile(allocator, input_path);
     defer img.deinit();
 
     var resized = try img.resize(800, 600);
     defer resized.deinit();
 
-    try stbz.savePngFile(&resized, output_path);
+    try zpix.savePngFile(&resized, output_path);
 }
 ```
 
@@ -481,7 +481,7 @@ fn processFile(
 
 ```zig
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 const httpz = @import("httpz"); // Example HTTP library
 
 pub fn thumbnailHandler(
@@ -493,7 +493,7 @@ pub fn thumbnailHandler(
     const image_data = req.body() orelse return error.NoBody;
 
     // Load image from memory
-    var img = try stbz.loadPngMemory(allocator, image_data);
+    var img = try zpix.loadPngMemory(allocator, image_data);
     defer img.deinit();
 
     // Generate thumbnail
@@ -501,7 +501,7 @@ pub fn thumbnailHandler(
     defer thumbnail.deinit();
 
     // Save to memory
-    const png_data = try stbz.savePngMemory(allocator, &thumbnail);
+    const png_data = try zpix.savePngMemory(allocator, &thumbnail);
     defer allocator.free(png_data);
 
     // Send response
@@ -514,7 +514,7 @@ pub fn thumbnailHandler(
 
 ```zig
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -536,7 +536,7 @@ pub fn main() !void {
     const height = try std.fmt.parseInt(u32, args[4], 10);
 
     // Load image
-    var img = try stbz.loadPngFile(allocator, input_path);
+    var img = try zpix.loadPngFile(allocator, input_path);
     defer img.deinit();
 
     std.debug.print("Loaded: {}x{}\n", .{img.width, img.height});
@@ -546,7 +546,7 @@ pub fn main() !void {
     defer resized.deinit();
 
     // Save
-    try stbz.savePngFile(&resized, output_path);
+    try zpix.savePngFile(&resized, output_path);
 
     std.debug.print("Saved: {}x{} to {s}\n", .{width, height, output_path});
 }
@@ -560,10 +560,10 @@ pub fn compareImages(
     path1: []const u8,
     path2: []const u8,
 ) !void {
-    var img1 = try stbz.loadPngFile(allocator, path1);
+    var img1 = try zpix.loadPngFile(allocator, path1);
     defer img1.deinit();
 
-    var img2 = try stbz.loadPngFile(allocator, path2);
+    var img2 = try zpix.loadPngFile(allocator, path2);
     defer img2.deinit();
 
     // Check dimensions
@@ -609,8 +609,8 @@ pub fn compareImages(
 
 ```zig
 pub fn addWatermark(
-    img: *stbz.Image,
-    watermark: *const stbz.Image,
+    img: *zpix.Image,
+    watermark: *const zpix.Image,
     x: u32,
     y: u32,
     alpha: f32, // 0.0 to 1.0

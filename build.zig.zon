@@ -1,5 +1,5 @@
 .{
-    .name = .stbz,
+    .name = .zpix,
     .version = "0.1.0",
     .dependencies = .{
         .stb = .{
@@ -7,7 +7,7 @@
             .hash = "N-V-__8AABQ7TgCnPlp8MP4YA8znrjd6E-ZjpF1rvrS8J_2I",
         },
     },
-    .fingerprint = 0xec2d81e52a878a8c,
+    .fingerprint = 0x9bd6de5487808337,
     .paths = .{
         "build.zig",
         "build.zig.zon",

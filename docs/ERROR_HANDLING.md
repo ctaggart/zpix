@@ -1,6 +1,6 @@
 # Error Handling Guide
 
-This document explains how to handle errors when using the stbz library.
+This document explains how to handle errors when using the zpix library.
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@ This document explains how to handle errors when using the stbz library.
 
 ## Overview
 
-stbz uses Zig's error handling system with explicit, typed errors. All operations that can fail return error unions (`!T`), making errors visible in the type system.
+zpix uses Zig's error handling system with explicit, typed errors. All operations that can fail return error unions (`!T`), making errors visible in the type system.
 
 **Key Principles**:
 - All errors are explicit and must be handled
@@ -80,7 +80,7 @@ error{
 
 ### Standard Library Errors
 
-stbz also propagates standard library errors:
+zpix also propagates standard library errors:
 
 - `std.fs.File.OpenError` - File not found, permission denied, etc.
 - `std.fs.File.ReadError` - I/O read errors
@@ -95,13 +95,13 @@ Use `try` to propagate errors up the call stack:
 
 ```zig
 pub fn processImage() !void {
-    var img = try stbz.loadPngFile(allocator, "input.png");
+    var img = try zpix.loadPngFile(allocator, "input.png");
     defer img.deinit();
 
     var resized = try img.resize(800, 600);
     defer resized.deinit();
 
-    try stbz.savePngFile(&resized, "output.png");
+    try zpix.savePngFile(&resized, "output.png");
 }
 ```
 
@@ -110,7 +110,7 @@ pub fn processImage() !void {
 Use `catch` to handle specific error cases:
 
 ```zig
-const img = stbz.loadPngFile(allocator, "input.png") catch |err| switch (err) {
+const img = zpix.loadPngFile(allocator, "input.png") catch |err| switch (err) {
     error.FileNotFound => {
         std.debug.print("File not found\n", .{});
         return err;
@@ -133,7 +133,7 @@ defer img.deinit();
 Use `catch` with a block to handle all errors uniformly:
 
 ```zig
-const img = stbz.loadPngFile(allocator, "input.png") catch |err| {
+const img = zpix.loadPngFile(allocator, "input.png") catch |err| {
     std.debug.print("Failed to load image: {}\n", .{err});
     return err;
 };
@@ -146,10 +146,10 @@ Use `errdefer` to cleanup on error:
 
 ```zig
 pub fn processImages(allocator: Allocator) !void {
-    var img1 = try stbz.loadPngFile(allocator, "image1.png");
+    var img1 = try zpix.loadPngFile(allocator, "image1.png");
     errdefer img1.deinit();
 
-    var img2 = try stbz.loadPngFile(allocator, "image2.png");
+    var img2 = try zpix.loadPngFile(allocator, "image2.png");
     errdefer img2.deinit();
 
     // If anything below fails, both images are cleaned up
@@ -166,9 +166,9 @@ pub fn processImages(allocator: Allocator) !void {
 Use `catch` to provide a fallback value:
 
 ```zig
-const img = stbz.loadPngFile(allocator, "optional.png") catch blk: {
+const img = zpix.loadPngFile(allocator, "optional.png") catch blk: {
     // Create a default image
-    break :blk try stbz.Image.init(allocator, 100, 100, 4);
+    break :blk try zpix.Image.init(allocator, 100, 100, 4);
 };
 defer img.deinit();
 ```
@@ -178,11 +178,11 @@ defer img.deinit();
 ### File Not Found
 
 ```zig
-const img = stbz.loadPngFile(allocator, "missing.png") catch |err| {
+const img = zpix.loadPngFile(allocator, "missing.png") catch |err| {
     if (err == error.FileNotFound) {
         std.debug.print("Image file does not exist\n", .{});
         // Maybe create a default image?
-        return try stbz.Image.init(allocator, 640, 480, 4);
+        return try zpix.Image.init(allocator, 640, 480, 4);
     }
     return err;
 };
@@ -192,7 +192,7 @@ defer img.deinit();
 ### Invalid Format
 
 ```zig
-const img = stbz.loadJpegFile(allocator, "image.jpg") catch |err| {
+const img = zpix.loadJpegFile(allocator, "image.jpg") catch |err| {
     if (err == error.InvalidSignature or err == error.UnsupportedFormat) {
         std.debug.print("File is not a valid JPEG\n", .{});
         std.debug.print("Try converting it first or check the file path\n", .{});
@@ -206,10 +206,10 @@ defer img.deinit();
 ### Out of Memory
 
 ```zig
-const img = stbz.loadPngFile(allocator, "huge.png") catch |err| {
+const img = zpix.loadPngFile(allocator, "huge.png") catch |err| {
     if (err == error.OutOfMemory) {
         std.debug.print("Image too large to load into memory\n", .{});
-        std.debug.print("Try using streaming API: stbz.streamingResize()\n", .{});
+        std.debug.print("Try using streaming API: zpix.streamingResize()\n", .{});
         return err;
     }
     return err;
@@ -220,7 +220,7 @@ defer img.deinit();
 ### Corrupt Image Data
 
 ```zig
-const img = stbz.loadPngFile(allocator, "corrupt.png") catch |err| {
+const img = zpix.loadPngFile(allocator, "corrupt.png") catch |err| {
     switch (err) {
         error.InvalidChunkSize,
         error.InvalidImageData,
@@ -238,7 +238,7 @@ defer img.deinit();
 ### Operation Out of Bounds
 
 ```zig
-var img = try stbz.loadPngFile(allocator, "input.png");
+var img = try zpix.loadPngFile(allocator, "input.png");
 defer img.deinit();
 
 // Try to crop beyond image bounds
@@ -261,13 +261,13 @@ Never ignore errors. Either handle them explicitly or propagate with `try`:
 
 ```zig
 // Bad: ignoring errors
-_ = stbz.loadPngFile(allocator, "input.png");
+_ = zpix.loadPngFile(allocator, "input.png");
 
 // Good: propagate errors
-var img = try stbz.loadPngFile(allocator, "input.png");
+var img = try zpix.loadPngFile(allocator, "input.png");
 
 // Good: handle errors
-var img = stbz.loadPngFile(allocator, "input.png") catch |err| {
+var img = zpix.loadPngFile(allocator, "input.png") catch |err| {
     std.debug.print("Error: {}\n", .{err});
     return err;
 };
@@ -279,7 +279,7 @@ When a function allocates multiple resources, use `errdefer` to ensure cleanup o
 
 ```zig
 pub fn loadAndProcess(allocator: Allocator) !Image {
-    var temp = try stbz.loadPngFile(allocator, "temp.png");
+    var temp = try zpix.loadPngFile(allocator, "temp.png");
     errdefer temp.deinit();
 
     var processed = try temp.resize(800, 600);
@@ -295,7 +295,7 @@ pub fn loadAndProcess(allocator: Allocator) !Image {
 When catching errors, provide helpful context:
 
 ```zig
-const img = stbz.loadPngFile(allocator, path) catch |err| {
+const img = zpix.loadPngFile(allocator, path) catch |err| {
     std.debug.print("Failed to load '{s}': {}\n", .{path, err});
     return err;
 };
@@ -309,7 +309,7 @@ For libraries, use scoped logging instead of printing errors:
 ```zig
 const log = std.log.scoped(.my_app);
 
-const img = stbz.loadPngFile(allocator, path) catch |err| {
+const img = zpix.loadPngFile(allocator, path) catch |err| {
     log.err("Failed to load image '{s}': {}", .{path, err});
     return err;
 };
@@ -334,7 +334,7 @@ pub fn loadAndResize(
     width: u32,
     height: u32,
 ) !Image {
-    var img = try stbz.loadPngFile(allocator, path);
+    var img = try zpix.loadPngFile(allocator, path);
     errdefer img.deinit();
 
     var resized = try img.resize(width, height);
@@ -376,9 +376,9 @@ pub fn processBatch(base_allocator: Allocator) !void {
 
     const allocator = arena.allocator();
 
-    var img1 = try stbz.loadPngFile(allocator, "image1.png");
-    var img2 = try stbz.loadPngFile(allocator, "image2.png");
-    var img3 = try stbz.loadPngFile(allocator, "image3.png");
+    var img1 = try zpix.loadPngFile(allocator, "image1.png");
+    var img2 = try zpix.loadPngFile(allocator, "image2.png");
+    var img3 = try zpix.loadPngFile(allocator, "image3.png");
 
     // No need for individual deinit() calls - arena handles it
     // If any operation fails, arena.deinit() cleans up everything
@@ -391,7 +391,7 @@ When possible, provide fallback behavior:
 
 ```zig
 pub fn loadImageWithFallback(allocator: Allocator, path: []const u8) !Image {
-    return stbz.loadPngFile(allocator, path) catch |err| {
+    return zpix.loadPngFile(allocator, path) catch |err| {
         std.log.warn("Failed to load {s}: {}, using placeholder", .{path, err});
         return createPlaceholderImage(allocator);
     };
@@ -409,7 +409,7 @@ test "loadPngFile returns error for invalid signature" {
     // Create a file with invalid signature
     const invalid_data = [_]u8{0xFF, 0xD8, 0xFF, 0xE0}; // JPEG signature
 
-    const result = stbz.loadPngMemory(allocator, &invalid_data);
+    const result = zpix.loadPngMemory(allocator, &invalid_data);
     try std.testing.expectError(error.InvalidSignature, result);
 }
 

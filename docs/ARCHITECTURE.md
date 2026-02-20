@@ -1,6 +1,6 @@
-# stbz Architecture
+# zpix Architecture
 
-This document describes the architecture, design decisions, and internal structure of the stbz image library.
+This document describes the architecture, design decisions, and internal structure of the zpix image library.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ This document describes the architecture, design decisions, and internal structu
 
 ## Project Overview
 
-stbz is a pure Zig image library that provides:
+zpix is a pure Zig image library that provides:
 - PNG decoding and encoding
 - JPEG decoding (baseline and progressive)
 - Image manipulation operations
@@ -31,9 +31,9 @@ stbz is a pure Zig image library that provides:
 ## Module Structure
 
 ```
-stbz/
+zpix/
 ├── src/
-│   ├── stbz.zig           # Main entry point (public API)
+│   ├── zpix.zig           # Main entry point (public API)
 │   ├── image.zig           # Image data structure and operations
 │   ├── png.zig             # PNG decoder/encoder (high-level)
 │   ├── decode_context.zig  # PNG decoding context (shared)
@@ -53,7 +53,7 @@ stbz/
 
 ### Module Responsibilities
 
-#### `stbz.zig` (Main Entry Point)
+#### `zpix.zig` (Main Entry Point)
 - Re-exports public API from all modules
 - Provides convenience functions for common operations
 - Documentation hub for the library
@@ -98,13 +98,13 @@ stbz/
 ### Module Dependencies
 
 ```
-stbz.zig ─────────┬── image.zig
+zpix.zig ─────────┬── image.zig
                    ├── jpeg.zig
                    ├── png.zig ──────────── decode_context.zig
                    └── streaming.zig ───┬── png.zig
                                         └── decode_context.zig
 
-cli.zig ──────────────── stbz.zig
+cli.zig ──────────────── zpix.zig
 ```
 
 ## Design Principles
@@ -396,7 +396,7 @@ Compare output against stb_image (C reference):
 
 ```zig
 test "PNG decoding matches stb_image" {
-    const zig_img = try stbz.loadPngFile(...);
+    const zig_img = try zpix.loadPngFile(...);
     const c_img = loadReferenceImage(...);
     try expectImagesEqual(zig_img, c_img);
 }

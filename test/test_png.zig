@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // C reference implementation bindings
 const c = @cImport({
@@ -31,7 +31,7 @@ test "PNG decoder produces same output as stb_image for RGB" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -56,7 +56,7 @@ test "PNG decoder produces same output as stb_image for RGBA" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_rgba_4x4.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_rgba_4x4.png");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -74,7 +74,7 @@ test "Resize produces correctly sized output" {
     const allocator = std.testing.allocator;
 
     // Load an image
-    var img = try stbz.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
+    var img = try zpix.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
     defer img.deinit();
 
     // Test upscaling
@@ -127,7 +127,7 @@ test "PNG decoder handles interlaced (Adam7) images" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_interlaced_16x16.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_interlaced_16x16.png");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -152,7 +152,7 @@ test "PNG decoder handles grayscale images" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_gray_8x8.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_gray_8x8.png");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -177,7 +177,7 @@ test "PNG decoder handles grayscale+alpha images" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_gray_alpha_8x8.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_gray_alpha_8x8.png");
     defer zig_image.deinit();
 
     // Compare dimensions
@@ -202,7 +202,7 @@ test "PNG decoder handles large interlaced images" {
     defer stb_free(ref.data);
 
     // Load with our Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/landscape_interlaced.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/landscape_interlaced.png");
     defer zig_image.deinit();
 
     // Compare dimensions

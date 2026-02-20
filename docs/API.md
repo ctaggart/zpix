@@ -1,6 +1,6 @@
-# stbz API Reference
+# zpix API Reference
 
-Complete API documentation for the stbz image library.
+Complete API documentation for the zpix image library.
 
 ## Table of Contents
 
@@ -65,9 +65,9 @@ pub fn init(allocator: Allocator, width: u32, height: u32, channels: u8) !Image
 
 **Example:**
 ```zig
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
-var img = try stbz.Image.init(allocator, 640, 480, 3); // 640x480 RGB
+var img = try zpix.Image.init(allocator, 640, 480, 3); // 640x480 RGB
 defer img.deinit();
 ```
 
@@ -163,7 +163,7 @@ defer file.close();
 var buf: [8192]u8 = undefined;
 var file_reader = file.reader(&buf);
 
-var img = try stbz.decodePng(allocator, &file_reader.interface);
+var img = try zpix.decodePng(allocator, &file_reader.interface);
 defer img.deinit();
 ```
 
@@ -177,7 +177,7 @@ pub fn loadPngFile(allocator: Allocator, path: []const u8) !Image
 
 **Example:**
 ```zig
-var img = try stbz.loadPngFile(allocator, "photo.png");
+var img = try zpix.loadPngFile(allocator, "photo.png");
 defer img.deinit();
 ```
 
@@ -194,7 +194,7 @@ pub fn loadPngMemory(allocator: Allocator, data: []const u8) !Image
 const png_data = try std.fs.cwd().readFileAlloc(allocator, "photo.png", 10_000_000);
 defer allocator.free(png_data);
 
-var img = try stbz.loadPngMemory(allocator, png_data);
+var img = try zpix.loadPngMemory(allocator, png_data);
 defer img.deinit();
 ```
 
@@ -218,7 +218,7 @@ pub fn decodeJpeg(allocator: Allocator, reader: *std.Io.Reader) !Image
 
 **Example:**
 ```zig
-var img = try stbz.loadJpegFile(allocator, "photo.jpg");
+var img = try zpix.loadJpegFile(allocator, "photo.jpg");
 defer img.deinit();
 ```
 
@@ -266,7 +266,7 @@ defer out_file.close();
 var out_buf: [8192]u8 = undefined;
 var file_writer = out_file.writer(&out_buf);
 
-try stbz.encodePng(allocator, &img, &file_writer.interface);
+try zpix.encodePng(allocator, &img, &file_writer.interface);
 try file_writer.interface.flush();
 ```
 
@@ -280,7 +280,7 @@ pub fn savePngFile(img: *const Image, path: []const u8) !void
 
 **Example:**
 ```zig
-try stbz.savePngFile(&img, "output.png");
+try zpix.savePngFile(&img, "output.png");
 ```
 
 ### `savePngMemory`
@@ -295,7 +295,7 @@ pub fn savePngMemory(allocator: Allocator, img: *const Image) ![]u8
 
 **Example:**
 ```zig
-const png_data = try stbz.savePngMemory(allocator, &img);
+const png_data = try zpix.savePngMemory(allocator, &img);
 defer allocator.free(png_data);
 ```
 
@@ -446,7 +446,7 @@ var out_buf: [8192]u8 = undefined;
 var reader = in_file.reader(&in_buf);
 var writer = out_file.writer(&out_buf);
 
-try stbz.streamingResize(allocator, &reader.interface, &writer.interface, 800, 600);
+try zpix.streamingResize(allocator, &reader.interface, &writer.interface, 800, 600);
 try writer.interface.flush();
 ```
 
@@ -467,7 +467,7 @@ pub const PngStreamingDecoder = struct {
 
 **Example:**
 ```zig
-var decoder = try stbz.PngStreamingDecoder.init(allocator, &reader, .{});
+var decoder = try zpix.PngStreamingDecoder.init(allocator, &reader, .{});
 defer decoder.deinit();
 
 while (try decoder.readRow()) |row| {
@@ -491,7 +491,7 @@ pub const PngRowWriter = struct {
 
 **Example:**
 ```zig
-var row_writer = try stbz.PngRowWriter.init(allocator, &writer, 640, 480, 3);
+var row_writer = try zpix.PngRowWriter.init(allocator, &writer, 640, 480, 3);
 defer row_writer.deinit();
 
 for (0..480) |y| {
@@ -558,7 +558,7 @@ pub const JpegError = error{
 ### Error Handling Example
 
 ```zig
-const img = stbz.loadPngFile(allocator, path) catch |err| switch (err) {
+const img = zpix.loadPngFile(allocator, path) catch |err| switch (err) {
     error.InvalidSignature => {
         std.log.err("Not a valid PNG file: {s}", .{path});
         return;

@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 const images_dir = "/home/diogo/RPG/Eberron/Images";
 
@@ -42,8 +42,8 @@ pub fn main() !void {
         const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ images_dir, entry.path }) catch continue;
 
         // Try to load
-        var img = stbz.loadFile(allocator, full_path) catch |err| {
-            if (err == stbz.FormatError.UnsupportedFormat) {
+        var img = zpix.loadFile(allocator, full_path) catch |err| {
+            if (err == zpix.FormatError.UnsupportedFormat) {
                 skipped += 1;
                 continue;
             }

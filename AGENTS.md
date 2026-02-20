@@ -1,6 +1,6 @@
-# stbz Development Instructions
+# zpix Development Instructions
 
-This file contains development instructions for AI agents, automated tools, and developers working on stbz. For project-specific Claude Code instructions, see [CLAUDE.md](CLAUDE.md).
+This file contains development instructions for AI agents, automated tools, and developers working on zpix. For project-specific Claude Code instructions, see [CLAUDE.md](CLAUDE.md).
 
 ## Build Commands
 
@@ -17,7 +17,7 @@ This file contains development instructions for AI agents, automated tools, and 
 
 ## Architecture
 
-- `src/stbz.zig` - Main library entry point
+- `src/zpix.zig` - Main library entry point
 - `src/jpeg.zig` - JPEG decoder (baseline + progressive)
 - `src/png.zig` - PNG decoder/encoder
 - `src/image.zig` - Image data structure
@@ -82,7 +82,7 @@ const val = (top * weight_y + bottom * (1 - weight_y));
 Use scoped logging for debugging and diagnostics:
 
 ```zig
-const log = std.log.scoped(.stbz_modulename);
+const log = std.log.scoped(.zpix_modulename);
 
 // Use sparingly - libraries should minimize logging
 log.debug("Failed to parse header: offset={}, marker=0x{X:0>4}", .{offset, marker});
@@ -90,7 +90,7 @@ log.debug("Processing component {}/{}", .{i + 1, total});
 ```
 
 **Guidelines:**
-- Use scoped logs with `.stbz_<modulename>` (e.g., `.stbz_jpeg`, `.stbz_png`)
+- Use scoped logs with `.zpix_<modulename>` (e.g., `.zpix_jpeg`, `.zpix_png`)
 - Prefer returning errors over logging in library code
 - Use `log.debug()` for error context and diagnostics (only visible with debug logging enabled)
 - Avoid `log.err()`, `log.info()`, and `log.warn()` in library code - let applications control logging

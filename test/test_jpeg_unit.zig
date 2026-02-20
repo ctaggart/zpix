@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // Unit tests for JPEG decoder - testing behavior, not just output correctness
 // These tests verify edge cases, error handling, and internal logic
@@ -10,7 +10,7 @@ test "JPEG decoder rejects files with invalid signature" {
     // Not a JPEG file (PNG signature)
     const invalid_data = [_]u8{ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 
-    const result = stbz.loadJpegMemory(allocator, &invalid_data);
+    const result = zpix.loadJpegMemory(allocator, &invalid_data);
 
     try std.testing.expectError(error.InvalidSignature, result);
 }
@@ -21,7 +21,7 @@ test "JPEG decoder rejects truncated SOI marker" {
     // Only one byte (should be 2 bytes for SOI)
     const truncated = [_]u8{0xFF};
 
-    const result = stbz.loadJpegMemory(allocator, &truncated);
+    const result = zpix.loadJpegMemory(allocator, &truncated);
 
     try std.testing.expectError(error.InvalidSignature, result);
 }
@@ -32,7 +32,7 @@ test "JPEG decoder rejects file without SOI marker" {
     // Random data, no SOI marker
     const no_soi = [_]u8{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
 
-    const result = stbz.loadJpegMemory(allocator, &no_soi);
+    const result = zpix.loadJpegMemory(allocator, &no_soi);
 
     try std.testing.expectError(error.InvalidSignature, result);
 }
@@ -41,7 +41,7 @@ test "JPEG decoder handles minimal valid baseline JPEG" {
     const allocator = std.testing.allocator;
 
     // Load a real minimal JPEG
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     defer img.deinit();
 
     // Verify it's actually loaded
@@ -54,7 +54,7 @@ test "JPEG decoder handles minimal valid baseline JPEG" {
 test "JPEG decoder handles grayscale image" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_gray_8x8.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_gray_8x8.jpg");
     defer img.deinit();
 
     // Note: Some grayscale JPEGs are encoded with 3 components (RGB with same values)
@@ -66,7 +66,7 @@ test "JPEG decoder handles grayscale image" {
 test "JPEG decoder handles RGB (3 components)" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     defer img.deinit();
 
     // Should be RGB
@@ -77,7 +77,7 @@ test "JPEG decoder handles RGB (3 components)" {
 test "JPEG decoder handles progressive JPEG" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4_progressive.jpg");
     defer img.deinit();
 
     // Should decode successfully
@@ -89,7 +89,7 @@ test "JPEG decoder handles progressive JPEG" {
 test "JPEG decoder produces correct dimensions" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     defer img.deinit();
 
     try std.testing.expectEqual(@as(u32, 4), img.width);
@@ -99,7 +99,7 @@ test "JPEG decoder produces correct dimensions" {
 test "JPEG decoder allocates correct amount of memory" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
     defer img.deinit();
 
     const expected_size = @as(usize, img.width) * @as(usize, img.height) * @as(usize, img.channels);
@@ -109,7 +109,7 @@ test "JPEG decoder allocates correct amount of memory" {
 test "JPEG decoder pixel data is not all zeros" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     defer img.deinit();
 
     // At least some pixels should be non-zero
@@ -126,7 +126,7 @@ test "JPEG decoder handles multiple sequential loads" {
 
     // Load same file multiple times
     for (0..3) |_| {
-        var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+        var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
         defer img.deinit();
 
         try std.testing.expectEqual(@as(u32, 4), img.width);
@@ -138,7 +138,7 @@ test "JPEG decoder cleans up memory on success" {
     // Use testing allocator to detect leaks
     const allocator = std.testing.allocator;
 
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/test_rgb_4x4.jpg");
     img.deinit();
 
     // If there's a leak, testing allocator will catch it

@@ -1,11 +1,11 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 test "JPEG encode round-trip: RGB image" {
     const allocator = std.testing.allocator;
 
     // Create a fresh RGB test image (avoid double-lossy by not loading from JPEG)
-    var img = try stbz.Image.init(allocator, 16, 16, 3);
+    var img = try zpix.Image.init(allocator, 16, 16, 3);
     defer img.deinit();
 
     for (0..16) |y| {
@@ -18,7 +18,7 @@ test "JPEG encode round-trip: RGB image" {
     }
 
     // Encode to JPEG at high quality
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 95);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 95);
     defer allocator.free(jpeg_data);
 
     // Verify JPEG signature
@@ -26,7 +26,7 @@ test "JPEG encode round-trip: RGB image" {
     try std.testing.expectEqual(@as(u8, 0xD8), jpeg_data[1]);
 
     // Decode back
-    var decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
+    var decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
     defer decoded.deinit();
 
     // Verify dimensions
@@ -48,7 +48,7 @@ test "JPEG encode round-trip: grayscale image" {
     const allocator = std.testing.allocator;
 
     // Create a grayscale test image
-    var img = try stbz.Image.init(allocator, 16, 16, 1);
+    var img = try zpix.Image.init(allocator, 16, 16, 1);
     defer img.deinit();
 
     // Fill with a gradient pattern
@@ -59,11 +59,11 @@ test "JPEG encode round-trip: grayscale image" {
     }
 
     // Encode to JPEG
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 95);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 95);
     defer allocator.free(jpeg_data);
 
     // Decode back
-    var decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
+    var decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
     defer decoded.deinit();
 
     try std.testing.expectEqual(img.width, decoded.width);
@@ -84,7 +84,7 @@ test "JPEG encode: higher quality produces larger output" {
     const allocator = std.testing.allocator;
 
     // Create a test image with varied content
-    var img = try stbz.Image.init(allocator, 32, 32, 3);
+    var img = try zpix.Image.init(allocator, 32, 32, 3);
     defer img.deinit();
 
     for (0..32) |y| {
@@ -96,10 +96,10 @@ test "JPEG encode: higher quality produces larger output" {
         }
     }
 
-    const low_q = try stbz.saveJpegMemory(allocator, &img, 10);
+    const low_q = try zpix.saveJpegMemory(allocator, &img, 10);
     defer allocator.free(low_q);
 
-    const high_q = try stbz.saveJpegMemory(allocator, &img, 95);
+    const high_q = try zpix.saveJpegMemory(allocator, &img, 95);
     defer allocator.free(high_q);
 
     // Higher quality should produce larger output
@@ -110,13 +110,13 @@ test "JPEG encode round-trip: larger image" {
     const allocator = std.testing.allocator;
 
     // Double-lossy test: load JPEG, re-encode, decode
-    var img = try stbz.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
+    var img = try zpix.loadJpegFile(allocator, "test/fixtures/landscape_600x400.jpg");
     defer img.deinit();
 
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 90);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 90);
     defer allocator.free(jpeg_data);
 
-    var decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
+    var decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
     defer decoded.deinit();
 
     try std.testing.expectEqual(img.width, decoded.width);
@@ -137,7 +137,7 @@ test "JPEG encode: non-multiple-of-8 dimensions" {
     const allocator = std.testing.allocator;
 
     // Create image with dimensions not divisible by 8
-    var img = try stbz.Image.init(allocator, 13, 11, 3);
+    var img = try zpix.Image.init(allocator, 13, 11, 3);
     defer img.deinit();
 
     for (0..11) |y| {
@@ -149,10 +149,10 @@ test "JPEG encode: non-multiple-of-8 dimensions" {
         }
     }
 
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 90);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 90);
     defer allocator.free(jpeg_data);
 
-    var decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
+    var decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
     defer decoded.deinit();
 
     try std.testing.expectEqual(@as(u32, 13), decoded.width);
@@ -162,7 +162,7 @@ test "JPEG encode: non-multiple-of-8 dimensions" {
 test "JPEG encode: RGBA input drops alpha" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.Image.init(allocator, 8, 8, 4);
+    var img = try zpix.Image.init(allocator, 8, 8, 4);
     defer img.deinit();
 
     for (0..8) |y| {
@@ -175,10 +175,10 @@ test "JPEG encode: RGBA input drops alpha" {
         }
     }
 
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 90);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 90);
     defer allocator.free(jpeg_data);
 
-    var decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
+    var decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
     defer decoded.deinit();
 
     // JPEG doesn't support alpha, should decode as 3-channel
@@ -190,11 +190,11 @@ test "JPEG encode: RGBA input drops alpha" {
 test "JPEG encode: output has valid JFIF structure" {
     const allocator = std.testing.allocator;
 
-    var img = try stbz.Image.init(allocator, 8, 8, 3);
+    var img = try zpix.Image.init(allocator, 8, 8, 3);
     defer img.deinit();
     @memset(img.data, 128);
 
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 75);
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 75);
     defer allocator.free(jpeg_data);
 
     // Check SOI marker
@@ -210,11 +210,11 @@ test "JPEG encode: output has valid JFIF structure" {
     try std.testing.expectEqual(@as(u8, 0xD9), jpeg_data[jpeg_data.len - 1]);
 }
 
-test "JPEG encode comparison: stbz encode, C stb_image decode" {
+test "JPEG encode comparison: zpix encode, C stb_image decode" {
     const allocator = std.testing.allocator;
 
     // Create a synthetic test image
-    var img = try stbz.Image.init(allocator, 16, 16, 3);
+    var img = try zpix.Image.init(allocator, 16, 16, 3);
     defer img.deinit();
 
     for (0..16) |y| {
@@ -226,8 +226,8 @@ test "JPEG encode comparison: stbz encode, C stb_image decode" {
         }
     }
 
-    // Encode with stbz
-    const jpeg_data = try stbz.saveJpegMemory(allocator, &img, 90);
+    // Encode with zpix
+    const jpeg_data = try zpix.saveJpegMemory(allocator, &img, 90);
     defer allocator.free(jpeg_data);
 
     // Decode with C stb_image
@@ -243,16 +243,16 @@ test "JPEG encode comparison: stbz encode, C stb_image decode" {
     try std.testing.expectEqual(@as(c_int, 16), c_width);
     try std.testing.expectEqual(@as(c_int, 16), c_height);
 
-    // Also decode with stbz to compare
-    var stbz_decoded = try stbz.loadJpegMemory(allocator, jpeg_data);
-    defer stbz_decoded.deinit();
+    // Also decode with zpix to compare
+    var zpix_decoded = try zpix.loadJpegMemory(allocator, jpeg_data);
+    defer zpix_decoded.deinit();
 
-    // Compare stbz decode vs C decode
+    // Compare zpix decode vs C decode
     const pixel_count = @as(usize, @intCast(c_width)) * @as(usize, @intCast(c_height)) * @as(usize, @intCast(c_channels));
     const c_data = c_pixels.?[0..pixel_count];
 
     var max_diff: u32 = 0;
-    for (stbz_decoded.data[0..pixel_count], c_data) |a, b| {
+    for (zpix_decoded.data[0..pixel_count], c_data) |a, b| {
         const diff: u32 = if (a > b) a - b else b - a;
         if (diff > max_diff) max_diff = diff;
     }

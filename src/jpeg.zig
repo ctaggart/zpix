@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const image_mod = @import("image.zig");
 const Image = image_mod.Image;
 
-const log = std.log.scoped(.stbz_jpeg);
+const log = std.log.scoped(.zpix_jpeg);
 
 pub const JpegError = error{
     InvalidSignature,

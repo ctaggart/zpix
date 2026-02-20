@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // C reference implementation bindings
 const c = @cImport({
@@ -60,18 +60,18 @@ fn benchPngDecodeZig() f64 {
 
     // warmup
     {
-        var img = stbz.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
+        var img = zpix.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
         img.deinit();
     }
 
     for (&times) |*t| {
         var timer = std.time.Timer.start() catch @panic("timer");
-        var img = stbz.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
+        var img = zpix.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
         t.* = timer.read();
         img.deinit();
     }
 
-    printResult("stbz", &times);
+    printResult("zpix", &times);
     return mean(&times);
 }
 
@@ -107,18 +107,18 @@ fn benchJpegDecodeZig() f64 {
 
     // warmup
     {
-        var img = stbz.loadJpegFile(allocator, jpg_path) catch @panic("zig jpeg load failed");
+        var img = zpix.loadJpegFile(allocator, jpg_path) catch @panic("zig jpeg load failed");
         img.deinit();
     }
 
     for (&times) |*t| {
         var timer = std.time.Timer.start() catch @panic("timer");
-        var img = stbz.loadJpegFile(allocator, jpg_path) catch @panic("zig jpeg load failed");
+        var img = zpix.loadJpegFile(allocator, jpg_path) catch @panic("zig jpeg load failed");
         t.* = timer.read();
         img.deinit();
     }
 
-    printResult("stbz", &times);
+    printResult("zpix", &times);
     return mean(&times);
 }
 
@@ -153,23 +153,23 @@ fn benchPngEncodeZig() f64 {
     var times: [iterations]u64 = undefined;
 
     // Load source image once
-    var img = stbz.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
+    var img = zpix.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
     defer img.deinit();
 
     // warmup
     {
-        const data = stbz.savePngMemory(allocator, &img) catch @panic("zig png encode failed");
+        const data = zpix.savePngMemory(allocator, &img) catch @panic("zig png encode failed");
         allocator.free(data);
     }
 
     for (&times) |*t| {
         var timer = std.time.Timer.start() catch @panic("timer");
-        const data = stbz.savePngMemory(allocator, &img) catch @panic("zig png encode failed");
+        const data = zpix.savePngMemory(allocator, &img) catch @panic("zig png encode failed");
         t.* = timer.read();
         allocator.free(data);
     }
 
-    printResult("stbz", &times);
+    printResult("zpix", &times);
     return mean(&times);
 }
 
@@ -207,7 +207,7 @@ fn benchResizeZig() f64 {
     var times: [iterations]u64 = undefined;
 
     // Load source image once
-    var img = stbz.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
+    var img = zpix.loadPngFile(allocator, png_path) catch @panic("zig png load failed");
     defer img.deinit();
 
     const new_w: u32 = 300;
@@ -226,7 +226,7 @@ fn benchResizeZig() f64 {
         resized.deinit();
     }
 
-    printResult("stbz", &times);
+    printResult("zpix", &times);
     return mean(&times);
 }
 
@@ -316,7 +316,7 @@ pub fn main() !void {
     }
 
     // Full comparison mode
-    print("=== stbz benchmark (ReleaseFast) ===\n\n", .{});
+    print("=== zpix benchmark (ReleaseFast) ===\n\n", .{});
 
     print("PNG decode (landscape_600x400.png, 600x400 RGB):\n", .{});
     const png_zig = benchPngDecodeZig();

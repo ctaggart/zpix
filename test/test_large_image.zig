@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 /// Test low-memory streaming operations with large images
 /// Run with: zig build test-large
@@ -20,7 +20,7 @@ pub fn main() !void {
 
     std.debug.print("Test 1: Standard resize (full image in memory)\n", .{});
     {
-        var img = try stbz.loadPngFile(allocator, path);
+        var img = try zpix.loadPngFile(allocator, path);
         defer img.deinit();
         std.debug.print("  Loaded: {}x{} ({} bytes)\n", .{ img.width, img.height, img.data.len });
 
@@ -28,7 +28,7 @@ pub fn main() !void {
         defer resized.deinit();
         std.debug.print("  Resized: {}x{}\n", .{ resized.width, resized.height });
 
-        try stbz.savePngFile(&resized, "/tmp/large_resize_standard.png");
+        try zpix.savePngFile(&resized, "/tmp/large_resize_standard.png");
         std.debug.print("  Saved to /tmp/large_resize_standard.png\n", .{});
     }
 
@@ -44,7 +44,7 @@ pub fn main() !void {
         var out_buf: [8192]u8 = undefined;
         var file_writer = out_file.writer(&out_buf);
 
-        try stbz.streamingResize(allocator, &file_reader.interface, &file_writer.interface, 800, 600);
+        try zpix.streamingResize(allocator, &file_reader.interface, &file_writer.interface, 800, 600);
         try file_writer.interface.flush();
         std.debug.print("  Saved to /tmp/large_resize_streaming.png\n", .{});
     }
@@ -56,7 +56,7 @@ pub fn main() !void {
         var in_buf: [8192]u8 = undefined;
         var file_reader = in_file.reader(&in_buf);
 
-        var decoder = try stbz.PngStreamingDecoder.init(allocator, &file_reader.interface, .{});
+        var decoder = try zpix.PngStreamingDecoder.init(allocator, &file_reader.interface, .{});
         defer decoder.deinit();
 
         std.debug.print("  Decoder initialized: {}x{}, {} channels\n", .{
@@ -74,11 +74,11 @@ pub fn main() !void {
 
     std.debug.print("\nVerifying outputs...\n", .{});
     {
-        var resize_standard = try stbz.loadPngFile(allocator, "/tmp/large_resize_standard.png");
+        var resize_standard = try zpix.loadPngFile(allocator, "/tmp/large_resize_standard.png");
         defer resize_standard.deinit();
         std.debug.print("  Standard resize: {}x{}\n", .{ resize_standard.width, resize_standard.height });
 
-        var resize_streaming = try stbz.loadPngFile(allocator, "/tmp/large_resize_streaming.png");
+        var resize_streaming = try zpix.loadPngFile(allocator, "/tmp/large_resize_streaming.png");
         defer resize_streaming.deinit();
         std.debug.print("  Streaming resize: {}x{}\n", .{ resize_streaming.width, resize_streaming.height });
 

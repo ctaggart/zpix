@@ -1,5 +1,5 @@
 const std = @import("std");
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // Error handling tests - verify proper error reporting for corrupt/invalid files
 
@@ -9,7 +9,7 @@ test "JPEG: empty file" {
     const allocator = std.testing.allocator;
     const empty = [_]u8{};
 
-    const result = stbz.loadJpegMemory(allocator, &empty);
+    const result = zpix.loadJpegMemory(allocator, &empty);
     try std.testing.expectError(error.InvalidSignature, result);
 }
 
@@ -17,7 +17,7 @@ test "JPEG: file with only SOI marker" {
     const allocator = std.testing.allocator;
     const only_soi = [_]u8{ 0xFF, 0xD8 }; // SOI only
 
-    const result = stbz.loadJpegMemory(allocator, &only_soi);
+    const result = zpix.loadJpegMemory(allocator, &only_soi);
     try std.testing.expectError(error.InvalidData, result);
 }
 
@@ -28,7 +28,7 @@ test "JPEG: invalid marker after SOI" {
         0xFF, 0x00, // Invalid marker (0xFF00 is not a valid JPEG marker)
     };
 
-    const result = stbz.loadJpegMemory(allocator, &invalid_marker);
+    const result = zpix.loadJpegMemory(allocator, &invalid_marker);
     // Should fail - decoder returns InvalidData for malformed data
     try std.testing.expectError(error.InvalidData, result);
 }
@@ -43,7 +43,7 @@ test "JPEG: truncated quantization table" {
         // Missing the actual 64 quantization values
     };
 
-    const result = stbz.loadJpegMemory(allocator, &truncated_dqt);
+    const result = zpix.loadJpegMemory(allocator, &truncated_dqt);
     try std.testing.expectError(error.UnexpectedEndOfData, result);
 }
 
@@ -55,7 +55,7 @@ test "JPEG: missing SOF marker" {
         0xFF, 0xD9, // EOI (immediate end)
     };
 
-    const result = stbz.loadJpegMemory(allocator, &no_sof);
+    const result = zpix.loadJpegMemory(allocator, &no_sof);
     try std.testing.expectError(error.InvalidData, result);
 }
 
@@ -72,7 +72,7 @@ test "JPEG: unsupported precision (12-bit)" {
         0x00, // Component details...
     };
 
-    const result = stbz.loadJpegMemory(allocator, &twelve_bit);
+    const result = zpix.loadJpegMemory(allocator, &twelve_bit);
     try std.testing.expectError(error.UnsupportedFormat, result);
 }
 
@@ -88,7 +88,7 @@ test "JPEG: invalid component count (0)" {
         0x00, // Components = 0 (invalid!)
     };
 
-    const result = stbz.loadJpegMemory(allocator, &zero_components);
+    const result = zpix.loadJpegMemory(allocator, &zero_components);
     try std.testing.expectError(error.UnsupportedFormat, result);
 }
 
@@ -105,7 +105,7 @@ test "JPEG: invalid component count (4 - CMYK not supported)" {
         // Would need component details here...
     };
 
-    const result = stbz.loadJpegMemory(allocator, &four_components);
+    const result = zpix.loadJpegMemory(allocator, &four_components);
     try std.testing.expectError(error.UnsupportedFormat, result);
 }
 
@@ -115,7 +115,7 @@ test "PNG: empty file" {
     const allocator = std.testing.allocator;
     const empty = [_]u8{};
 
-    const result = stbz.loadPngMemory(allocator, &empty);
+    const result = zpix.loadPngMemory(allocator, &empty);
     try std.testing.expectError(error.EndOfStream, result);
 }
 
@@ -124,7 +124,7 @@ test "PNG: invalid signature" {
     // JPEG signature instead of PNG
     const invalid_sig = [_]u8{ 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46 };
 
-    const result = stbz.loadPngMemory(allocator, &invalid_sig);
+    const result = zpix.loadPngMemory(allocator, &invalid_sig);
     try std.testing.expectError(error.InvalidSignature, result);
 }
 
@@ -133,7 +133,7 @@ test "PNG: truncated signature" {
     // Only first 4 bytes of PNG signature
     const truncated = [_]u8{ 0x89, 0x50, 0x4E, 0x47 };
 
-    const result = stbz.loadPngMemory(allocator, &truncated);
+    const result = zpix.loadPngMemory(allocator, &truncated);
     try std.testing.expectError(error.EndOfStream, result);
 }
 
@@ -148,7 +148,7 @@ test "PNG: missing IHDR chunk" {
         0xAE, 0x42, 0x60, 0x82, // CRC
     };
 
-    const result = stbz.loadPngMemory(allocator, &no_ihdr);
+    const result = zpix.loadPngMemory(allocator, &no_ihdr);
     // Decoder tries to decompress IDAT before validating structure, gets decompression error
     try std.testing.expectError(error.DecompressionFailed, result);
 }
@@ -166,7 +166,7 @@ test "PNG: truncated IHDR" {
         // Missing height and other fields
     };
 
-    const result = stbz.loadPngMemory(allocator, &truncated_ihdr);
+    const result = zpix.loadPngMemory(allocator, &truncated_ihdr);
     try std.testing.expectError(error.EndOfStream, result);
 }
 
@@ -188,7 +188,7 @@ test "PNG: zero width" {
         0x00, 0x00, 0x00, 0x00, // CRC (incorrect but doesn't matter for this test)
     };
 
-    const result = stbz.loadPngMemory(allocator, &zero_width);
+    const result = zpix.loadPngMemory(allocator, &zero_width);
     // Decoder processes IHDR but fails during decompression due to invalid dimensions
     try std.testing.expectError(error.DecompressionFailed, result);
 }
@@ -211,7 +211,7 @@ test "PNG: zero height" {
         0x00, 0x00, 0x00, 0x00, // CRC
     };
 
-    const result = stbz.loadPngMemory(allocator, &zero_height);
+    const result = zpix.loadPngMemory(allocator, &zero_height);
     // Decoder processes IHDR but fails during decompression due to invalid dimensions
     try std.testing.expectError(error.DecompressionFailed, result);
 }
@@ -221,21 +221,21 @@ test "PNG: zero height" {
 test "JPEG: nonexistent file" {
     const allocator = std.testing.allocator;
 
-    const result = stbz.loadJpegFile(allocator, "test/fixtures/does_not_exist.jpg");
+    const result = zpix.loadJpegFile(allocator, "test/fixtures/does_not_exist.jpg");
     try std.testing.expectError(error.FileNotFound, result);
 }
 
 test "PNG: nonexistent file" {
     const allocator = std.testing.allocator;
 
-    const result = stbz.loadPngFile(allocator, "test/fixtures/does_not_exist.png");
+    const result = zpix.loadPngFile(allocator, "test/fixtures/does_not_exist.png");
     try std.testing.expectError(error.FileNotFound, result);
 }
 
 test "JPEG: directory instead of file" {
     const allocator = std.testing.allocator;
 
-    const result = stbz.loadJpegFile(allocator, "test/fixtures");
+    const result = zpix.loadJpegFile(allocator, "test/fixtures");
     // Should fail (either IsDir or some read error)
     try std.testing.expect(std.meta.isError(result));
 }
@@ -243,7 +243,7 @@ test "JPEG: directory instead of file" {
 test "PNG: directory instead of file" {
     const allocator = std.testing.allocator;
 
-    const result = stbz.loadPngFile(allocator, "test/fixtures");
+    const result = zpix.loadPngFile(allocator, "test/fixtures");
     // Should fail (either IsDir or some read error)
     try std.testing.expect(std.meta.isError(result));
 }

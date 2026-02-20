@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const log = std.log.scoped(.stbz_png);
+const log = std.log.scoped(.zpix_png);
 
 pub const PNG_SIGNATURE = [8]u8{ 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
 

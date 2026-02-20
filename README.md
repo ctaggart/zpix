@@ -1,4 +1,4 @@
-# stbz
+# zpix
 
 A pure Zig image library for generating thumbnails and tiles. Decodes JPEG and PNG, encodes PNG. No C dependencies in the core library.
 
@@ -98,7 +98,7 @@ Test fixtures are located in `test/fixtures/`:
 
 ### Comparison Testing
 
-The test suite compares stbz output against the C reference implementation (stb_image):
+The test suite compares zpix output against the C reference implementation (stb_image):
 
 ```zig
 // Example from test/test_png.zig
@@ -110,7 +110,7 @@ test "PNG decoder produces same output as stb_image for RGB" {
     defer stb_free(ref.data);
 
     // Load with Zig implementation
-    var zig_image = try stbz.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
+    var zig_image = try zpix.loadPngFile(allocator, "test/fixtures/test_rgb_4x4.png");
     defer zig_image.deinit();
 
     // Compare pixel-by-pixel
@@ -131,25 +131,25 @@ test "PNG decoder produces same output as stb_image for RGB" {
 **Adding new test fixtures:**
 1. Add image file to `test/fixtures/`
 2. Create comparison test in `test/test_png.zig` or `test/test_jpeg.zig`
-3. Verify stbz output matches stb_image byte-for-byte
+3. Verify zpix output matches stb_image byte-for-byte
 
 ## CLI Usage
 
 ```bash
 # Crop a region from an image
-stbz crop input.png output.png 100 100 200 200
+zpix crop input.png output.png 100 100 200 200
 
 # Resize an image
-stbz resize input.png output.png 640 480
+zpix resize input.png output.png 640 480
 
 # Create a square thumbnail (crops to center, then resizes)
-stbz thumbnail input.png thumb.png 128
+zpix thumbnail input.png thumb.png 128
 
 # Rotate image (90, 180, or 270 degrees clockwise)
-stbz rotate input.png output.png 90
+zpix rotate input.png output.png 90
 
 # Flip image (h = horizontal, v = vertical)
-stbz flip input.png output.png h
+zpix flip input.png output.png h
 ```
 
 ## Library Usage
@@ -157,11 +157,11 @@ stbz flip input.png output.png h
 ### File-based API
 
 ```zig
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // Load an image (JPEG or PNG)
-var image = try stbz.loadJpegFile(allocator, "photo.jpg");
-// or: var image = try stbz.loadPngFile(allocator, "image.png");
+var image = try zpix.loadJpegFile(allocator, "photo.jpg");
+// or: var image = try zpix.loadPngFile(allocator, "image.png");
 defer image.deinit();
 
 // Crop
@@ -173,7 +173,7 @@ var resized = try image.resize(new_width, new_height);
 defer resized.deinit();
 
 // Save as PNG
-try stbz.savePngFile(&resized, "output.png");
+try zpix.savePngFile(&resized, "output.png");
 ```
 
 ### Reader/Writer API
@@ -181,7 +181,7 @@ try stbz.savePngFile(&resized, "output.png");
 For streaming and custom I/O sources:
 
 ```zig
-const stbz = @import("stbz");
+const zpix = @import("zpix");
 
 // Decode from any std.Io.Reader
 var file = try std.fs.cwd().openFile("input.png", .{});
@@ -189,7 +189,7 @@ defer file.close();
 var buf: [8192]u8 = undefined;
 var file_reader = file.reader(&buf);
 
-var image = try stbz.decodePng(allocator, &file_reader.interface);
+var image = try zpix.decodePng(allocator, &file_reader.interface);
 defer image.deinit();
 
 // Encode to any std.Io.Writer
@@ -198,7 +198,7 @@ defer out_file.close();
 var out_buf: [8192]u8 = undefined;
 var file_writer = out_file.writer(&out_buf);
 
-try stbz.encodePng(allocator, &image, &file_writer.interface);
+try zpix.encodePng(allocator, &image, &file_writer.interface);
 try file_writer.interface.flush();
 ```
 
@@ -210,10 +210,10 @@ For large images on memory-constrained systems, use incremental processing.
 ```zig
 // Streaming resize: decompresses PNG row-by-row while resizing
 // Memory: O(compressed_size + width) instead of O(width × height)
-try stbz.streamingResize(allocator, &reader, &writer, new_width, new_height);
+try zpix.streamingResize(allocator, &reader, &writer, new_width, new_height);
 
 // For custom streaming operations, use the row-based decoder:
-var decoder = try stbz.PngStreamingDecoder.init(allocator, &reader, .{});
+var decoder = try zpix.PngStreamingDecoder.init(allocator, &reader, .{});
 defer decoder.deinit();
 
 while (try decoder.readRow()) |row_data| {
@@ -235,7 +235,7 @@ while (try decoder.readRow()) |row_data| {
 
 ## Benchmarks
 
-Compare stbz performance against the C reference (stb_image):
+Compare zpix performance against the C reference (stb_image):
 
 ```bash
 zig build bench                                    # Full comparison table
