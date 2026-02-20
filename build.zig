@@ -111,6 +111,24 @@ pub fn build(b: *std.Build) void {
 
     const run_jpeg_tests = b.addRunArtifact(jpeg_tests);
 
+    // JPEG encoder tests (round-trip, quality, C reference comparison)
+    const jpeg_encode_tests = b.addTest(.{
+        .name = "jpeg-encode-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/test_jpeg_encode.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    jpeg_encode_tests.root_module.addImport("stbz", stbz_mod);
+    jpeg_encode_tests.root_module.addIncludePath(b.path("reference"));
+    jpeg_encode_tests.root_module.addCSourceFile(.{
+        .file = b.path("reference/ref_impl.c"),
+        .flags = &.{"-std=c99"},
+    });
+    jpeg_encode_tests.root_module.link_libc = true;
+    const run_jpeg_encode_tests = b.addRunArtifact(jpeg_encode_tests);
+
     // Separate test steps for better organization
     const test_step = b.step("test", "Run unit tests (fast, no C dependencies)");
     test_step.dependOn(&run_unit_tests.step);
@@ -120,6 +138,7 @@ pub fn build(b: *std.Build) void {
     const integration_test_step = b.step("integration-test", "Run integration tests (compare against stb_image)");
     integration_test_step.dependOn(&run_compare_tests.step);
     integration_test_step.dependOn(&run_jpeg_tests.step);
+    integration_test_step.dependOn(&run_jpeg_encode_tests.step);
 
     const test_all_step = b.step("test-all", "Run all tests (unit + integration)");
     test_all_step.dependOn(&run_unit_tests.step);
@@ -127,6 +146,7 @@ pub fn build(b: *std.Build) void {
     test_all_step.dependOn(&run_error_tests.step);
     test_all_step.dependOn(&run_compare_tests.step);
     test_all_step.dependOn(&run_jpeg_tests.step);
+    test_all_step.dependOn(&run_jpeg_encode_tests.step);
 
     // Large image test executable (for manual testing)
     const large_test = b.addExecutable(.{

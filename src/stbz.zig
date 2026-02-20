@@ -5,6 +5,7 @@ pub const image = @import("image.zig");
 pub const Image = image.Image;
 pub const png = @import("png.zig");
 pub const jpeg = @import("jpeg.zig");
+pub const jpeg_encoder = @import("jpeg_encoder.zig");
 pub const streaming = @import("streaming.zig");
 
 // Core Reader/Writer based functions
@@ -19,6 +20,9 @@ pub const savePngFile = png.saveToFile;
 pub const savePngMemory = png.saveToMemory;
 pub const loadJpegFile = jpeg.loadFromFile;
 pub const loadJpegMemory = jpeg.loadFromMemory;
+pub const encodeJpeg = jpeg_encoder.encode;
+pub const saveJpegFile = jpeg_encoder.saveToFile;
+pub const saveJpegMemory = jpeg_encoder.saveToMemory;
 
 // ============================================================================
 // Low-Memory Streaming Operations
