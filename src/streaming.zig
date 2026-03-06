@@ -29,7 +29,6 @@ pub const PngStreamingDecoder = decode_context.PngStreamingDecoder;
 /// Row-by-row PNG writer for custom streaming operations.
 /// Useful if you need to generate PNG output incrementally.
 pub const PngRowWriter = struct {
-    const Self = @This();
 
     allocator: Allocator,
     writer: *std.Io.Writer,
@@ -40,7 +39,7 @@ pub const PngRowWriter = struct {
     current_row: u32,
     idat_buffer: std.ArrayList(u8),
 
-    pub fn init(allocator: Allocator, writer: *std.Io.Writer, width: u32, height: u32, channels: u8) !Self {
+    pub fn init(allocator: Allocator, writer: *std.Io.Writer, width: u32, height: u32, channels: u8) !@This() {
         const stride = @as(usize, width) * @as(usize, channels);
         const prev_row = try allocator.alloc(u8, stride);
         @memset(prev_row, 0);
@@ -52,7 +51,7 @@ pub const PngRowWriter = struct {
         var ihdr_data = png.buildIhdrData(width, height, channels);
         try png.writeChunk(writer, decode_context.ChunkType.IHDR, &ihdr_data);
 
-        return Self{
+        return .{
             .allocator = allocator,
             .writer = writer,
             .width = width,
@@ -64,13 +63,13 @@ pub const PngRowWriter = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.allocator.free(self.prev_row);
         self.idat_buffer.deinit(self.allocator);
     }
 
     /// Write a row of pixel data
-    pub fn writeRow(self: *Self, row: []const u8) !void {
+    pub fn writeRow(self: *@This(), row: []const u8) !void {
         const stride = @as(usize, self.width) * @as(usize, self.channels);
         if (row.len != stride) return error.InvalidRowLength;
 
@@ -83,7 +82,7 @@ pub const PngRowWriter = struct {
     }
 
     /// Finish writing - compresses and writes IDAT, then IEND
-    pub fn finish(self: *Self) !void {
+    pub fn finish(self: *@This()) !void {
         // Compress all buffered data
         const compressed = try png.compressZlib(self.allocator, self.idat_buffer.items);
         defer self.allocator.free(compressed);
@@ -227,8 +226,8 @@ pub fn streamingResize(
 test "streamingResize produces correct dimensions" {
     const allocator = std.testing.allocator;
 
-    const image = @import("image.zig");
-    var img = try image.Image.init(allocator, 10, 10, 3);
+    const Image = @import("image.zig");
+    var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
 
     const red = [_]u8{ 255, 0, 0 };
@@ -256,8 +255,8 @@ test "streamingResize produces correct dimensions" {
 test "streamingResize with gradient pattern" {
     const allocator = std.testing.allocator;
 
-    const image = @import("image.zig");
-    var img = try image.Image.init(allocator, 8, 8, 3);
+    const Image = @import("image.zig");
+    var img = try Image.init(allocator, 8, 8, 3);
     defer img.deinit();
 
     // Create a gradient pattern

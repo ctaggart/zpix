@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const image_mod = @import("image.zig");
-const Image = image_mod.Image;
+const Image = @import("image.zig");
 
 const log = std.log.scoped(.zpix_jpeg);
 
@@ -623,25 +622,25 @@ fn decodeScanData(
 ) !Image {
     if (width == 0 or height == 0) return JpegError.InvalidFrameHeader;
 
-    const mcu_w: u32 = @as(u32, max_h) * 8;
-    const mcu_h: u32 = @as(u32, max_v) * 8;
-    const mcus_x = (width + mcu_w - 1) / mcu_w;
-    const mcus_y = (height + mcu_h - 1) / mcu_h;
+    const mcu_width: u32 = @as(u32, max_h) * 8;
+    const mcu_height: u32 = @as(u32, max_v) * 8;
+    const mcus_x = (width + mcu_width - 1) / mcu_width;
+    const mcus_y = (height + mcu_height - 1) / mcu_height;
 
     // Allocate separate component buffers at native resolution
     var comp_bufs: [4][]u8 = undefined;
     var comp_stride: [4]usize = undefined;
     var comp_rows: [4]usize = undefined;
-    var num_alloc: u8 = 0;
-    errdefer for (0..num_alloc) |ci| allocator.free(comp_bufs[ci]);
+    var num_allocated: u8 = 0;
+    errdefer for (0..num_allocated) |ci| allocator.free(comp_bufs[ci]);
 
     for (0..num_components) |ci| {
-        const hs: u32 = if (num_components == 1) 1 else @as(u32, components[ci].h_sample);
-        const vs: u32 = if (num_components == 1) 1 else @as(u32, components[ci].v_sample);
-        comp_stride[ci] = @as(usize, mcus_x) * hs * 8;
-        comp_rows[ci] = @as(usize, mcus_y) * vs * 8;
+        const h_scale: u32 = if (num_components == 1) 1 else @as(u32, components[ci].h_sample);
+        const v_scale: u32 = if (num_components == 1) 1 else @as(u32, components[ci].v_sample);
+        comp_stride[ci] = @as(usize, mcus_x) * h_scale * 8;
+        comp_rows[ci] = @as(usize, mcus_y) * v_scale * 8;
         comp_bufs[ci] = try allocator.alloc(u8, comp_stride[ci] * comp_rows[ci]);
-        num_alloc += 1;
+        num_allocated += 1;
     }
 
     var bits = BitReader.init(data[scan_start..]);
@@ -729,7 +728,7 @@ fn decodeScanData(
         try resampleAndConvert(allocator, &img, &comp_bufs, &comp_stride, &comp_rows, max_h, max_v, components, num_components);
     }
 
-    for (0..num_alloc) |ci| allocator.free(comp_bufs[ci]);
+    for (0..num_allocated) |ci| allocator.free(comp_bufs[ci]);
 
     return img;
 }

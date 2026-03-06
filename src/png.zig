@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const image = @import("image.zig");
-const Image = image.Image;
+const Image = @import("image.zig");
 const decode_context = @import("decode_context.zig");
 
 // Re-export shared types

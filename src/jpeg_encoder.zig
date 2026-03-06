@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const image_mod = @import("image.zig");
-const Image = image_mod.Image;
+const Image = @import("image.zig");
 
 // Standard JPEG quantization tables (ITU-T T.81 Annex K, Table K.1 and K.2)
 const std_luminance_quant_table = [64]u8{
@@ -130,13 +129,13 @@ const HuffCode = struct {
 fn buildHuffCodes(bits: [16]u8, vals: []const u8) [256]HuffCode {
     var result: [256]HuffCode = [_]HuffCode{.{ .code = 0, .len = 0 }} ** 256;
     var code: u16 = 0;
-    var si: usize = 0;
+    var symbol_index: usize = 0;
 
     for (0..16) |i| {
         const len: u8 = @intCast(i + 1);
         for (0..bits[i]) |_| {
-            result[vals[si]] = .{ .code = code, .len = len };
-            si += 1;
+            result[vals[symbol_index]] = .{ .code = code, .len = len };
+            symbol_index += 1;
             code += 1;
         }
         code <<= 1;
@@ -165,9 +164,9 @@ const JpegBitWriter = struct {
         };
     }
 
-    fn writeBits(self: *JpegBitWriter, code: u16, nbits: u8) !void {
-        if (nbits == 0) return;
-        self.bit_cnt += nbits;
+    fn writeBits(self: *JpegBitWriter, code: u16, num_bits: u8) !void {
+        if (num_bits == 0) return;
+        self.bit_cnt += num_bits;
         self.bit_buf |= @as(i32, code) << @intCast(24 - @as(u5, @intCast(self.bit_cnt)));
 
         while (self.bit_cnt >= 8) {
@@ -197,23 +196,23 @@ const JpegBitWriter = struct {
 };
 
 // Compute the number of bits needed to represent a value, and the VLI code
-fn computeVLI(value: i32) struct { nbits: u8, bits: u16 } {
-    if (value == 0) return .{ .nbits = 0, .bits = 0 };
+fn computeVLI(value: i32) struct { num_bits: u8, bits: u16 } {
+    if (value == 0) return .{ .num_bits = 0, .bits = 0 };
 
     const abs_val = if (value < 0) -value else value;
-    var nbits: u8 = 0;
-    var tmp = abs_val;
-    while (tmp > 0) {
-        nbits += 1;
-        tmp >>= 1;
+    var num_bits: u8 = 0;
+    var remaining = abs_val;
+    while (remaining > 0) {
+        num_bits += 1;
+        remaining >>= 1;
     }
 
     const bits: u16 = if (value < 0)
-        @intCast(value + (@as(i32, 1) << @intCast(nbits)) - 1)
+        @intCast(value + (@as(i32, 1) << @intCast(num_bits)) - 1)
     else
         @intCast(value);
 
-    return .{ .nbits = nbits, .bits = bits };
+    return .{ .num_bits = num_bits, .bits = bits };
 }
 
 // Scale quantization table by quality factor (IJG formula)
@@ -334,8 +333,8 @@ fn processDU(
         try bw.writeBits(dc_codes[0].code, dc_codes[0].len);
     } else {
         const vli = computeVLI(dc_diff);
-        try bw.writeBits(dc_codes[vli.nbits].code, dc_codes[vli.nbits].len);
-        try bw.writeBits(vli.bits, vli.nbits);
+        try bw.writeBits(dc_codes[vli.num_bits].code, dc_codes[vli.num_bits].len);
+        try bw.writeBits(vli.bits, vli.num_bits);
     }
 
     // Encode AC
@@ -353,22 +352,22 @@ fn processDU(
 
     var i: usize = 1;
     while (i <= end0pos) {
-        var nrzeroes: usize = 0;
+        var num_zeroes: usize = 0;
         while (i <= end0pos and du[i] == 0) {
-            nrzeroes += 1;
+            num_zeroes += 1;
             i += 1;
         }
         if (i > end0pos) break;
 
-        while (nrzeroes >= 16) {
+        while (num_zeroes >= 16) {
             try bw.writeBits(ac_codes[0xF0].code, ac_codes[0xF0].len);
-            nrzeroes -= 16;
+            num_zeroes -= 16;
         }
 
         const vli = computeVLI(du[i]);
-        const rs: u8 = @intCast(nrzeroes * 16 + @as(usize, vli.nbits));
-        try bw.writeBits(ac_codes[rs].code, ac_codes[rs].len);
-        try bw.writeBits(vli.bits, vli.nbits);
+        const run_size: u8 = @intCast(num_zeroes * 16 + @as(usize, vli.num_bits));
+        try bw.writeBits(ac_codes[run_size].code, ac_codes[run_size].len);
+        try bw.writeBits(vli.bits, vli.num_bits);
         i += 1;
     }
 
@@ -456,14 +455,13 @@ fn writeSOS(writer: *std.Io.Writer, num_components: u8) !void {
 }
 
 /// Core encoder: writes JPEG to any std.Io.Writer
-pub fn encode(allocator: Allocator, img: *const Image, writer: *std.Io.Writer, quality: u8) !void {
-    _ = allocator;
+pub fn encode(_: Allocator, img: *const Image, writer: *std.Io.Writer, quality: u8) !void {
 
-    const q = if (quality == 0) @as(u8, 1) else quality;
+    const clamped_quality = if (quality == 0) @as(u8, 1) else quality;
 
     // Scale quantization tables
-    const lum_qtable = scaleQuantTable(std_luminance_quant_table, q);
-    const chrom_qtable = scaleQuantTable(std_chrominance_quant_table, q);
+    const lum_qtable = scaleQuantTable(std_luminance_quant_table, clamped_quality);
+    const chrom_qtable = scaleQuantTable(std_chrominance_quant_table, clamped_quality);
 
     // Build combined FDCT+quantization tables
     const fdtbl_y = buildFdtbl(lum_qtable);

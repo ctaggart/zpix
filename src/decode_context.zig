@@ -37,7 +37,6 @@ pub const DecodeError = error{
 /// Shared PNG decoding context - extracts header info and decompressed scanlines
 /// from a PNG reader. Used by both full decode and streaming operations.
 pub const PngDecodeContext = struct {
-    const Self = @This();
 
     width: u32,
     height: u32,
@@ -46,7 +45,7 @@ pub const PngDecodeContext = struct {
     raw_data: []u8,
     allocator: Allocator,
 
-    pub fn init(allocator: Allocator, reader: *std.Io.Reader) (DecodeError || Allocator.Error || std.Io.Reader.Error)!Self {
+    pub fn init(allocator: Allocator, reader: *std.Io.Reader) (DecodeError || Allocator.Error || std.Io.Reader.Error)!@This() {
         // Verify PNG signature
         const signature = try reader.takeArray(8);
         if (!std.mem.eql(u8, signature, &PNG_SIGNATURE)) {
@@ -121,7 +120,7 @@ pub const PngDecodeContext = struct {
         const raw_data = try decompressZlib(allocator, idat_data.items, expected_size);
         errdefer allocator.free(raw_data);
 
-        return Self{
+        return .{
             .width = width,
             .height = height,
             .channels = channels,
@@ -131,13 +130,13 @@ pub const PngDecodeContext = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.allocator.free(self.raw_data);
         self.* = undefined;
     }
 
     /// Returns stride (bytes per row of pixel data, excluding filter byte)
-    pub fn stride(self: Self) usize {
+    pub fn stride(self: @This()) usize {
         return @as(usize, self.width) * @as(usize, self.channels);
     }
 };
@@ -255,7 +254,7 @@ test "PngDecodeContext parses valid PNG" {
 
     // Create a minimal valid PNG in memory
     const png = @import("png.zig");
-    const Image = @import("image.zig").Image;
+    const Image = @import("image.zig");
 
     var img = try Image.init(allocator, 4, 4, 3);
     defer img.deinit();
@@ -291,7 +290,6 @@ test "PngDecodeContext rejects invalid signature" {
 /// The compressed IDAT data is still held in memory (unavoidable due to PNG's
 /// chunk structure), but decompression happens incrementally.
 pub const PngStreamingDecoder = struct {
-    const Self = @This();
 
     allocator: Allocator,
     width: u32,
@@ -320,7 +318,7 @@ pub const PngStreamingDecoder = struct {
         decompress_all: bool = false,
     };
 
-    pub fn init(allocator: Allocator, reader: *std.Io.Reader, options: InitOptions) (DecodeError || Allocator.Error || std.Io.Reader.Error)!Self {
+    pub fn init(allocator: Allocator, reader: *std.Io.Reader, options: InitOptions) (DecodeError || Allocator.Error || std.Io.Reader.Error)!@This() {
         // Verify PNG signature
         const signature = try reader.takeArray(8);
         if (!std.mem.eql(u8, signature, &PNG_SIGNATURE)) {
@@ -408,7 +406,7 @@ pub const PngStreamingDecoder = struct {
         const decompressor_buffer = try allocator.alloc(u8, 65536);
         errdefer allocator.free(decompressor_buffer);
 
-        var self = Self{
+        var self: @This() = .{
             .allocator = allocator,
             .width = width,
             .height = height,
@@ -438,7 +436,7 @@ pub const PngStreamingDecoder = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.allocator.free(self.compressed_data);
         self.allocator.free(self.current_row);
         self.allocator.free(self.prev_row);
@@ -449,7 +447,7 @@ pub const PngStreamingDecoder = struct {
 
     /// Read and decode the next row. Returns the decoded pixel data.
     /// Returns null when all rows have been read.
-    pub fn readRow(self: *Self) !?[]const u8 {
+    pub fn readRow(self: *@This()) !?[]const u8 {
         if (self.current_y >= self.height) {
             return null;
         }
@@ -478,7 +476,7 @@ pub const PngStreamingDecoder = struct {
     }
 
     /// Reset to beginning (re-initializes decompressor)
-    pub fn reset(self: *Self) void {
+    pub fn reset(self: *@This()) void {
         self.input_reader = .fixed(self.compressed_data);
         self.decompressor = .init(&self.input_reader, .zlib, self.decompressor_buffer);
         self.current_y = 0;
@@ -486,7 +484,7 @@ pub const PngStreamingDecoder = struct {
     }
 
     /// Get the stride (bytes per row)
-    pub fn stride(self: Self) usize {
+    pub fn stride(self: @This()) usize {
         return @as(usize, self.width) * @as(usize, self.channels);
     }
 };
@@ -494,7 +492,7 @@ pub const PngStreamingDecoder = struct {
 test "PngStreamingDecoder reads rows incrementally" {
     const allocator = std.testing.allocator;
     const png = @import("png.zig");
-    const Image = @import("image.zig").Image;
+    const Image = @import("image.zig");
 
     // Create test image
     var img = try Image.init(allocator, 4, 4, 3);

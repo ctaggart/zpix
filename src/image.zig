@@ -1,255 +1,249 @@
-const std = @import("std");
-const Allocator = std.mem.Allocator;
+width: u32,
+height: u32,
+channels: u8,
+data: []u8,
+allocator: Allocator,
 
-pub const Image = struct {
-    const Self = @This();
+pub fn init(allocator: Allocator, width: u32, height: u32, channels: u8) !@This() {
+    const size = @as(usize, width) * @as(usize, height) * @as(usize, channels);
+    const data = try allocator.alloc(u8, size);
+    @memset(data, 0);
+    return .{
+        .width = width,
+        .height = height,
+        .channels = channels,
+        .data = data,
+        .allocator = allocator,
+    };
+}
 
-    width: u32,
-    height: u32,
-    channels: u8,
-    data: []u8,
-    allocator: Allocator,
+pub fn deinit(self: *@This()) void {
+    self.allocator.free(self.data);
+    self.* = undefined;
+}
 
-    pub fn init(allocator: Allocator, width: u32, height: u32, channels: u8) !Self {
-        const size = @as(usize, width) * @as(usize, height) * @as(usize, channels);
-        const data = try allocator.alloc(u8, size);
-        @memset(data, 0);
-        return Self{
-            .width = width,
-            .height = height,
-            .channels = channels,
-            .data = data,
-            .allocator = allocator,
-        };
+pub fn getPixel(self: *const @This(), x: u32, y: u32) []const u8 {
+    std.debug.assert(x < self.width);
+    std.debug.assert(y < self.height);
+    const idx = (@as(usize, y) * @as(usize, self.width) + @as(usize, x)) * @as(usize, self.channels);
+    return self.data[idx .. idx + self.channels];
+}
+
+pub fn setPixel(self: *@This(), x: u32, y: u32, pixel: []const u8) void {
+    std.debug.assert(x < self.width);
+    std.debug.assert(y < self.height);
+    std.debug.assert(pixel.len == self.channels);
+    const idx = (@as(usize, y) * @as(usize, self.width) + @as(usize, x)) * @as(usize, self.channels);
+    @memcpy(self.data[idx .. idx + self.channels], pixel);
+}
+
+pub fn crop(self: *const @This(), x: u32, y: u32, crop_width: u32, crop_height: u32) !@This() {
+    // Validate bounds
+    if (x + crop_width > self.width or y + crop_height > self.height) {
+        return error.CropOutOfBounds;
+    }
+    if (crop_width == 0 or crop_height == 0) {
+        return error.InvalidCropDimensions;
     }
 
-    pub fn deinit(self: *Self) void {
-        self.allocator.free(self.data);
-        self.* = undefined;
+    var result = try @This().init(self.allocator, crop_width, crop_height, self.channels);
+    errdefer result.deinit();
+
+    const src_stride = @as(usize, self.width) * @as(usize, self.channels);
+    const dst_stride = @as(usize, crop_width) * @as(usize, self.channels);
+    const x_offset = @as(usize, x) * @as(usize, self.channels);
+
+    for (0..crop_height) |row| {
+        const src_row = @as(usize, y) + row;
+        const src_start = src_row * src_stride + x_offset;
+        const dst_start = row * dst_stride;
+        @memcpy(result.data[dst_start..][0..dst_stride], self.data[src_start..][0..dst_stride]);
     }
 
-    pub fn getPixel(self: *const Self, x: u32, y: u32) []const u8 {
-        std.debug.assert(x < self.width);
-        std.debug.assert(y < self.height);
-        const idx = (@as(usize, y) * @as(usize, self.width) + @as(usize, x)) * @as(usize, self.channels);
-        return self.data[idx .. idx + self.channels];
+    return result;
+}
+
+/// Resize image using bilinear interpolation (fixed-point integer math)
+pub fn resize(self: *const @This(), new_width: u32, new_height: u32) !@This() {
+    if (new_width == 0 or new_height == 0) {
+        return error.InvalidResizeDimensions;
     }
 
-    pub fn setPixel(self: *Self, x: u32, y: u32, pixel: []const u8) void {
-        std.debug.assert(x < self.width);
-        std.debug.assert(y < self.height);
-        std.debug.assert(pixel.len == self.channels);
-        const idx = (@as(usize, y) * @as(usize, self.width) + @as(usize, x)) * @as(usize, self.channels);
-        @memcpy(self.data[idx .. idx + self.channels], pixel);
+    var result = try @This().init(self.allocator, new_width, new_height, self.channels);
+    errdefer result.deinit();
+
+    const channels: usize = self.channels;
+    const src_data = self.data;
+    const dst_data = result.data;
+    const source_width: usize = self.width;
+    const source_height: usize = self.height;
+    const destination_width: usize = new_width;
+    const destination_height: usize = new_height;
+    const src_stride = source_width * channels;
+    const dst_stride = destination_width * channels;
+
+    // Fixed-point with 16 fractional bits
+    const SHIFT = 16;
+    const HALF = 1 << (SHIFT - 1); // 0.5 in fixed-point
+
+    // Map: src_coord = (dst_coord + 0.5) * src_size / dst_size - 0.5
+    // In fixed-point: src_fp = ((dst * 2 + 1) * src_size * (1<<(SHIFT-1))) / dst_size - HALF
+    // Simplified: use step-based approach
+
+    // Pre-compute x mapping: for each dst_x, store src_x0, src_x1, x_frac
+    const x_info = try self.allocator.alloc(XInfo, destination_width);
+    defer self.allocator.free(x_info);
+
+    for (0..destination_width) |dst_x| {
+        // src_x_fp = ((2*dst_x + 1) * source_width * HALF) / destination_width - HALF
+        const numerator: u64 = (@as(u64, 2 * dst_x + 1) * @as(u64, source_width) * @as(u64, HALF));
+        const src_x_fp: i64 = @as(i64, @intCast(numerator / @as(u64, destination_width))) - HALF;
+
+        const clamped = std.math.clamp(src_x_fp, 0, @as(i64, @intCast((source_width - 1))) << SHIFT);
+        const x0: usize = @intCast(@as(u64, @intCast(clamped)) >> SHIFT);
+        const x1 = @min(x0 + 1, source_width - 1);
+        const fraction: u32 = @intCast(@as(u64, @intCast(clamped)) & ((1 << SHIFT) - 1));
+
+        x_info[dst_x] = .{ .x0 = x0, .x1 = x1, .frac = fraction };
     }
 
-    pub fn crop(self: *const Self, x: u32, y: u32, crop_width: u32, crop_height: u32) !Self {
-        // Validate bounds
-        if (x + crop_width > self.width or y + crop_height > self.height) {
-            return error.CropOutOfBounds;
-        }
-        if (crop_width == 0 or crop_height == 0) {
-            return error.InvalidCropDimensions;
-        }
+    for (0..destination_height) |dst_y| {
+        const numerator_y: u64 = (@as(u64, 2 * dst_y + 1) * @as(u64, source_height) * @as(u64, HALF));
+        const src_y_fp: i64 = @as(i64, @intCast(numerator_y / @as(u64, destination_height))) - HALF;
 
-        var result = try Self.init(self.allocator, crop_width, crop_height, self.channels);
-        errdefer result.deinit();
+        const clamped_y = std.math.clamp(src_y_fp, 0, @as(i64, @intCast((source_height - 1))) << SHIFT);
+        const y0: usize = @intCast(@as(u64, @intCast(clamped_y)) >> SHIFT);
+        const y1 = @min(y0 + 1, source_height - 1);
+        const y_frac: u32 = @intCast(@as(u64, @intCast(clamped_y)) & ((1 << SHIFT) - 1));
+        const y_inv = @as(u32, (1 << SHIFT)) - y_frac;
 
-        const src_stride = @as(usize, self.width) * @as(usize, self.channels);
-        const dst_stride = @as(usize, crop_width) * @as(usize, self.channels);
-        const x_offset = @as(usize, x) * @as(usize, self.channels);
+        const row0 = src_data[y0 * src_stride ..][0..src_stride];
+        const row1 = src_data[y1 * src_stride ..][0..src_stride];
+        const dst_row = dst_data[dst_y * dst_stride ..][0..dst_stride];
 
-        for (0..crop_height) |row| {
-            const src_row = @as(usize, y) + row;
-            const src_start = src_row * src_stride + x_offset;
-            const dst_start = row * dst_stride;
-            @memcpy(result.data[dst_start..][0..dst_stride], self.data[src_start..][0..dst_stride]);
-        }
+        for (0..destination_width) |dst_x| {
+            const xi = x_info[dst_x];
+            const x_inv = @as(u32, (1 << SHIFT)) - xi.frac;
 
-        return result;
-    }
+            const off00 = xi.x0 * channels;
+            const off10 = xi.x1 * channels;
 
-    /// Resize image using bilinear interpolation (fixed-point integer math)
-    pub fn resize(self: *const Self, new_width: u32, new_height: u32) !Self {
-        if (new_width == 0 or new_height == 0) {
-            return error.InvalidResizeDimensions;
-        }
+            inline for (0..4) |ch| {
+                if (ch < channels) {
+                    const v00: u64 = row0[off00 + ch];
+                    const v10: u64 = row0[off10 + ch];
+                    const v01: u64 = row1[off00 + ch];
+                    const v11: u64 = row1[off10 + ch];
 
-        var result = try Self.init(self.allocator, new_width, new_height, self.channels);
-        errdefer result.deinit();
+                    const top = v00 * x_inv + v10 * xi.frac;
+                    const bot = v01 * x_inv + v11 * xi.frac;
+                    const value = (top * y_inv + bot * y_frac + (1 << 31)) >> 32;
 
-        const channels: usize = self.channels;
-        const src_data = self.data;
-        const dst_data = result.data;
-        const src_w: usize = self.width;
-        const src_h: usize = self.height;
-        const dst_w: usize = new_width;
-        const dst_h: usize = new_height;
-        const src_stride = src_w * channels;
-        const dst_stride = dst_w * channels;
-
-        // Fixed-point with 16 fractional bits
-        const SHIFT = 16;
-        const HALF = 1 << (SHIFT - 1); // 0.5 in fixed-point
-
-        // Map: src_coord = (dst_coord + 0.5) * src_size / dst_size - 0.5
-        // In fixed-point: src_fp = ((dst * 2 + 1) * src_size * (1<<(SHIFT-1))) / dst_size - HALF
-        // Simplified: use step-based approach
-
-        // Pre-compute x mapping: for each dst_x, store src_x0, src_x1, x_frac
-        const x_info = try self.allocator.alloc(XInfo, dst_w);
-        defer self.allocator.free(x_info);
-
-        for (0..dst_w) |dst_x| {
-            // src_x_fp = ((2*dst_x + 1) * src_w * HALF) / dst_w - HALF
-            const numer: u64 = (@as(u64, 2 * dst_x + 1) * @as(u64, src_w) * @as(u64, HALF));
-            const src_x_fp: i64 = @as(i64, @intCast(numer / @as(u64, dst_w))) - HALF;
-
-            const clamped = std.math.clamp(src_x_fp, 0, @as(i64, @intCast((src_w - 1))) << SHIFT);
-            const x0: usize = @intCast(@as(u64, @intCast(clamped)) >> SHIFT);
-            const x1 = @min(x0 + 1, src_w - 1);
-            const frac: u32 = @intCast(@as(u64, @intCast(clamped)) & ((1 << SHIFT) - 1));
-
-            x_info[dst_x] = .{ .x0 = x0, .x1 = x1, .frac = frac };
-        }
-
-        for (0..dst_h) |dst_y| {
-            const numer_y: u64 = (@as(u64, 2 * dst_y + 1) * @as(u64, src_h) * @as(u64, HALF));
-            const src_y_fp: i64 = @as(i64, @intCast(numer_y / @as(u64, dst_h))) - HALF;
-
-            const clamped_y = std.math.clamp(src_y_fp, 0, @as(i64, @intCast((src_h - 1))) << SHIFT);
-            const y0: usize = @intCast(@as(u64, @intCast(clamped_y)) >> SHIFT);
-            const y1 = @min(y0 + 1, src_h - 1);
-            const y_frac: u32 = @intCast(@as(u64, @intCast(clamped_y)) & ((1 << SHIFT) - 1));
-            const y_inv = @as(u32, (1 << SHIFT)) - y_frac;
-
-            const row0 = src_data[y0 * src_stride ..][0..src_stride];
-            const row1 = src_data[y1 * src_stride ..][0..src_stride];
-            const dst_row = dst_data[dst_y * dst_stride ..][0..dst_stride];
-
-            for (0..dst_w) |dst_x| {
-                const xi = x_info[dst_x];
-                const x_inv = @as(u32, (1 << SHIFT)) - xi.frac;
-
-                const off00 = xi.x0 * channels;
-                const off10 = xi.x1 * channels;
-
-                inline for (0..4) |ch| {
-                    if (ch < channels) {
-                        const v00: u64 = row0[off00 + ch];
-                        const v10: u64 = row0[off10 + ch];
-                        const v01: u64 = row1[off00 + ch];
-                        const v11: u64 = row1[off10 + ch];
-
-                        const top = v00 * x_inv + v10 * xi.frac;
-                        const bot = v01 * x_inv + v11 * xi.frac;
-                        const val = (top * y_inv + bot * y_frac + (1 << 31)) >> 32;
-
-                        dst_row[dst_x * channels + ch] = @intCast(val);
-                    }
+                    dst_row[dst_x * channels + ch] = @intCast(value);
                 }
             }
         }
-
-        return result;
     }
 
-    const XInfo = struct {
-        x0: usize,
-        x1: usize,
-        frac: u32,
-    };
+    return result;
+}
 
-    /// Rotate image 90 degrees clockwise
-    pub fn rotate90(self: *const Self) !Self {
-        // Width and height swap
-        var result = try Self.init(self.allocator, self.height, self.width, self.channels);
-        errdefer result.deinit();
-
-        for (0..self.height) |y| {
-            for (0..self.width) |x| {
-                // (x, y) -> (height - 1 - y, x) for 90° CW
-                const new_x = self.height - 1 - @as(u32, @intCast(y));
-                const new_y = @as(u32, @intCast(x));
-                const pixel = self.getPixel(@intCast(x), @intCast(y));
-                result.setPixel(new_x, new_y, pixel);
-            }
-        }
-
-        return result;
-    }
-
-    /// Rotate image 180 degrees
-    pub fn rotate180(self: *const Self) !Self {
-        var result = try Self.init(self.allocator, self.width, self.height, self.channels);
-        errdefer result.deinit();
-
-        for (0..self.height) |y| {
-            for (0..self.width) |x| {
-                // (x, y) -> (width - 1 - x, height - 1 - y)
-                const new_x = self.width - 1 - @as(u32, @intCast(x));
-                const new_y = self.height - 1 - @as(u32, @intCast(y));
-                const pixel = self.getPixel(@intCast(x), @intCast(y));
-                result.setPixel(new_x, new_y, pixel);
-            }
-        }
-
-        return result;
-    }
-
-    /// Rotate image 270 degrees clockwise (= 90 degrees counter-clockwise)
-    pub fn rotate270(self: *const Self) !Self {
-        // Width and height swap
-        var result = try Self.init(self.allocator, self.height, self.width, self.channels);
-        errdefer result.deinit();
-
-        for (0..self.height) |y| {
-            for (0..self.width) |x| {
-                // (x, y) -> (y, width - 1 - x) for 90° CCW
-                const new_x = @as(u32, @intCast(y));
-                const new_y = self.width - 1 - @as(u32, @intCast(x));
-                const pixel = self.getPixel(@intCast(x), @intCast(y));
-                result.setPixel(new_x, new_y, pixel);
-            }
-        }
-
-        return result;
-    }
-
-    /// Flip image horizontally (mirror left-right)
-    pub fn flipHorizontal(self: *const Self) !Self {
-        var result = try Self.init(self.allocator, self.width, self.height, self.channels);
-        errdefer result.deinit();
-
-        for (0..self.height) |y| {
-            for (0..self.width) |x| {
-                const new_x = self.width - 1 - @as(u32, @intCast(x));
-                const pixel = self.getPixel(@intCast(x), @intCast(y));
-                result.setPixel(new_x, @intCast(y), pixel);
-            }
-        }
-
-        return result;
-    }
-
-    /// Flip image vertically (mirror top-bottom)
-    pub fn flipVertical(self: *const Self) !Self {
-        var result = try Self.init(self.allocator, self.width, self.height, self.channels);
-        errdefer result.deinit();
-
-        for (0..self.height) |y| {
-            for (0..self.width) |x| {
-                const new_y = self.height - 1 - @as(u32, @intCast(y));
-                const pixel = self.getPixel(@intCast(x), @intCast(y));
-                result.setPixel(@intCast(x), new_y, pixel);
-            }
-        }
-
-        return result;
-    }
+const XInfo = struct {
+    x0: usize,
+    x1: usize,
+    frac: u32,
 };
 
-test "Image.init creates image with correct dimensions" {
+/// Rotate image 90 degrees clockwise
+pub fn rotate90(self: *const @This()) !@This() {
+    // Width and height swap
+    var result = try @This().init(self.allocator, self.height, self.width, self.channels);
+    errdefer result.deinit();
+
+    for (0..self.height) |y| {
+        for (0..self.width) |x| {
+            // (x, y) -> (height - 1 - y, x) for 90° CW
+            const new_x = self.height - 1 - @as(u32, @intCast(y));
+            const new_y = @as(u32, @intCast(x));
+            const pixel = self.getPixel(@intCast(x), @intCast(y));
+            result.setPixel(new_x, new_y, pixel);
+        }
+    }
+
+    return result;
+}
+
+/// Rotate image 180 degrees
+pub fn rotate180(self: *const @This()) !@This() {
+    var result = try @This().init(self.allocator, self.width, self.height, self.channels);
+    errdefer result.deinit();
+
+    for (0..self.height) |y| {
+        for (0..self.width) |x| {
+            // (x, y) -> (width - 1 - x, height - 1 - y)
+            const new_x = self.width - 1 - @as(u32, @intCast(x));
+            const new_y = self.height - 1 - @as(u32, @intCast(y));
+            const pixel = self.getPixel(@intCast(x), @intCast(y));
+            result.setPixel(new_x, new_y, pixel);
+        }
+    }
+
+    return result;
+}
+
+/// Rotate image 270 degrees clockwise (= 90 degrees counter-clockwise)
+pub fn rotate270(self: *const @This()) !@This() {
+    // Width and height swap
+    var result = try @This().init(self.allocator, self.height, self.width, self.channels);
+    errdefer result.deinit();
+
+    for (0..self.height) |y| {
+        for (0..self.width) |x| {
+            // (x, y) -> (y, width - 1 - x) for 90° CCW
+            const new_x = @as(u32, @intCast(y));
+            const new_y = self.width - 1 - @as(u32, @intCast(x));
+            const pixel = self.getPixel(@intCast(x), @intCast(y));
+            result.setPixel(new_x, new_y, pixel);
+        }
+    }
+
+    return result;
+}
+
+/// Flip image horizontally (mirror left-right)
+pub fn flipHorizontal(self: *const @This()) !@This() {
+    var result = try @This().init(self.allocator, self.width, self.height, self.channels);
+    errdefer result.deinit();
+
+    for (0..self.height) |y| {
+        for (0..self.width) |x| {
+            const new_x = self.width - 1 - @as(u32, @intCast(x));
+            const pixel = self.getPixel(@intCast(x), @intCast(y));
+            result.setPixel(new_x, @intCast(y), pixel);
+        }
+    }
+
+    return result;
+}
+
+/// Flip image vertically (mirror top-bottom)
+pub fn flipVertical(self: *const @This()) !@This() {
+    var result = try @This().init(self.allocator, self.width, self.height, self.channels);
+    errdefer result.deinit();
+
+    for (0..self.height) |y| {
+        for (0..self.width) |x| {
+            const new_y = self.height - 1 - @as(u32, @intCast(y));
+            const pixel = self.getPixel(@intCast(x), @intCast(y));
+            result.setPixel(@intCast(x), new_y, pixel);
+        }
+    }
+
+    return result;
+}
+
+test "init creates image with correct dimensions" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 100, 50, 4);
     defer img.deinit();
@@ -260,7 +254,8 @@ test "Image.init creates image with correct dimensions" {
     try std.testing.expectEqual(@as(usize, 100 * 50 * 4), img.data.len);
 }
 
-test "Image.init initializes data to zero" {
+test "init initializes data to zero" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -270,7 +265,8 @@ test "Image.init initializes data to zero" {
     }
 }
 
-test "Image.setPixel and getPixel work correctly" {
+test "setPixel and getPixel work correctly" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 4);
     defer img.deinit();
@@ -282,7 +278,8 @@ test "Image.setPixel and getPixel work correctly" {
     try std.testing.expectEqualSlices(u8, &pixel, retrieved);
 }
 
-test "Image.crop extracts correct region" {
+test "crop extracts correct region" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -310,7 +307,8 @@ test "Image.crop extracts correct region" {
     try std.testing.expectEqualSlices(u8, &blue, cropped.getPixel(0, 1));
 }
 
-test "Image.crop rejects out of bounds" {
+test "crop rejects out of bounds" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -320,7 +318,8 @@ test "Image.crop rejects out of bounds" {
     try std.testing.expectError(error.CropOutOfBounds, img.crop(0, 0, 11, 10));
 }
 
-test "Image.crop rejects zero dimensions" {
+test "crop rejects zero dimensions" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -329,7 +328,8 @@ test "Image.crop rejects zero dimensions" {
     try std.testing.expectError(error.InvalidCropDimensions, img.crop(0, 0, 5, 0));
 }
 
-test "Image.resize produces correct dimensions" {
+test "resize produces correct dimensions" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -343,7 +343,8 @@ test "Image.resize produces correct dimensions" {
     try std.testing.expectEqual(@as(u8, 3), resized.channels);
 }
 
-test "Image.resize bilinear interpolation blends colors" {
+test "resize bilinear interpolation blends colors" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 2, 1, 3);
     defer img.deinit();
@@ -365,7 +366,8 @@ test "Image.resize bilinear interpolation blends colors" {
     try std.testing.expect(middle[2] > 100 and middle[2] < 160);
 }
 
-test "Image.resize rejects zero dimensions" {
+test "resize rejects zero dimensions" {
+    const Image = @This();
     const allocator = std.testing.allocator;
     var img = try Image.init(allocator, 10, 10, 3);
     defer img.deinit();
@@ -374,7 +376,8 @@ test "Image.resize rejects zero dimensions" {
     try std.testing.expectError(error.InvalidResizeDimensions, img.resize(10, 0));
 }
 
-test "Image.rotate90 rotates clockwise" {
+test "rotate90 rotates clockwise" {
+    const Image = @This();
     const allocator = std.testing.allocator;
 
     // Create a 3x2 image (width=3, height=2)
@@ -417,7 +420,8 @@ test "Image.rotate90 rotates clockwise" {
     try std.testing.expectEqualSlices(u8, &blue, rotated.getPixel(1, 2));
 }
 
-test "Image.rotate180 rotates 180 degrees" {
+test "rotate180 rotates 180 degrees" {
+    const Image = @This();
     const allocator = std.testing.allocator;
 
     var img = try Image.init(allocator, 2, 2, 3);
@@ -447,7 +451,8 @@ test "Image.rotate180 rotates 180 degrees" {
     try std.testing.expectEqualSlices(u8, &red, rotated.getPixel(1, 1));
 }
 
-test "Image.rotate270 rotates counter-clockwise" {
+test "rotate270 rotates counter-clockwise" {
+    const Image = @This();
     const allocator = std.testing.allocator;
 
     var img = try Image.init(allocator, 3, 2, 3);
@@ -486,7 +491,8 @@ test "Image.rotate270 rotates counter-clockwise" {
     try std.testing.expectEqualSlices(u8, &cyan, rotated.getPixel(1, 2));
 }
 
-test "Image.flipHorizontal mirrors left-right" {
+test "flipHorizontal mirrors left-right" {
+    const Image = @This();
     const allocator = std.testing.allocator;
 
     var img = try Image.init(allocator, 3, 2, 3);
@@ -522,7 +528,8 @@ test "Image.flipHorizontal mirrors left-right" {
     try std.testing.expectEqualSlices(u8, &cyan, flipped.getPixel(2, 1));
 }
 
-test "Image.flipVertical mirrors top-bottom" {
+test "flipVertical mirrors top-bottom" {
+    const Image = @This();
     const allocator = std.testing.allocator;
 
     var img = try Image.init(allocator, 2, 3, 3);
@@ -557,3 +564,6 @@ test "Image.flipVertical mirrors top-bottom" {
     try std.testing.expectEqualSlices(u8, &red, flipped.getPixel(0, 2));
     try std.testing.expectEqualSlices(u8, &green, flipped.getPixel(1, 2));
 }
+
+const std = @import("std");
+const Allocator = std.mem.Allocator;

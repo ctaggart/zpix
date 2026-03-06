@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const image = @import("image.zig");
-pub const Image = image.Image;
+pub const Image = @import("image.zig");
+
 pub const png = @import("png.zig");
 pub const jpeg = @import("jpeg.zig");
 pub const jpeg_encoder = @import("jpeg_encoder.zig");
