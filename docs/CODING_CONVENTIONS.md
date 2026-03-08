@@ -257,6 +257,64 @@ test "resize produces correct dimensions" {
 
 Use `testing.allocator` (detects leaks) and `std.testing.expect*` assertions.
 
+## Input validation (decoders & encoders)
+
+Validate untrusted data at the parsing boundary — before values are used in
+arithmetic, as array indices, or passed deeper into the pipeline.
+
+### Validate dimensions against `Image.MAX_DIMENSION`
+
+All decoders must check width/height immediately after parsing the header:
+
+```zig
+const Image = @import("image.zig");
+if (width == 0 or height == 0 or width > Image.MAX_DIMENSION or height > Image.MAX_DIMENSION)
+    return error.InvalidFrameHeader; // or InvalidImageData for PNG
+```
+
+### Bound known ranges to spec limits
+
+JPEG and PNG have well-defined value ranges. Validate against the spec, not
+just "does it fit in the type":
+
+- Table IDs: 0–3 (quantization, Huffman)
+- Sampling factors: 1–4
+- DC categories: 0–15
+- Spectral selection: 0–63, start ≤ end
+- Channel counts: encoder must reject unsupported values (e.g. 0, 2)
+
+### Guard marker/chunk lengths before subtraction
+
+`length - 2` underflows when `length < 2`. Always check first:
+
+```zig
+const length = readU16(data, pos);
+if (length < 2) return JpegError.InvalidQuantizationTable;
+var remaining = @as(usize, length) - 2;
+```
+
+### Widen before arithmetic on u32 bounds
+
+When adding two `u32` values that could overflow, widen to `u64`:
+
+```zig
+// Bad — wraps on x=0xFFFFFFFF, crop_width=2
+if (x + crop_width > self.width) ...
+
+// Good
+if (@as(u64, x) + @as(u64, crop_width) > @as(u64, self.width)) ...
+```
+
+### Validate skip/seek lengths against remaining data
+
+Before advancing a position by a parsed length, ensure it doesn't exceed the
+buffer:
+
+```zig
+if (@as(usize, length) > data.len - pos) return JpegError.UnexpectedEndOfData;
+pos += @as(usize, length);
+```
+
 ## Code hygiene
 
 - Remove dead code, unused imports, and unused struct fields — version control

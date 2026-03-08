@@ -52,6 +52,14 @@ Test fixtures are in `test/fixtures/`.
 - Prefer `*const` for read-only pointer parameters
 - Use `@This()` directly (see docs/CODING_CONVENTIONS.md)
 
+### Input Validation
+
+Decoders must validate all parsed values at the boundary (see `docs/CODING_CONVENTIONS.md` for full rules):
+- Dimensions against `Image.MAX_DIMENSION` immediately after parsing headers
+- Table indices, sampling factors, spectral bounds against spec limits
+- Marker/chunk lengths before subtraction (`length < 2` guard)
+- Widen `u32` additions to `u64` when overflow is possible
+
 ### Variable Naming
 
 **Use descriptive full names by default:**
