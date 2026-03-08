@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/zpix.zig"),
     });
 
-    // CLI executable
+    // CLI executable (pure Zig, no C dependencies)
     const exe = b.addExecutable(.{
         .name = "zpix",
         .root_module = b.createModule(.{
@@ -19,12 +19,6 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe.root_module.addImport("zpix", zpix_mod);
-    exe.root_module.addIncludePath(b.path("reference"));
-    exe.root_module.addCSourceFile(.{
-        .file = b.path("reference/ref_impl.c"),
-        .flags = &.{"-std=c99"},
-    });
-    exe.root_module.link_libc = true;
 
     b.installArtifact(exe);
 
@@ -73,7 +67,8 @@ pub fn build(b: *std.Build) void {
     error_tests.root_module.addImport("zpix", zpix_mod);
     const run_error_tests = b.addRunArtifact(error_tests);
 
-    // Comparison tests (Zig vs C reference)
+    // Integration tests: compare zpix output against stb_image (C reference).
+    // The stb C dependency is only compiled when these targets are requested.
     const compare_tests = b.addTest(.{
         .name = "compare-tests",
         .root_module = b.createModule(.{
@@ -83,16 +78,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
     compare_tests.root_module.addImport("zpix", zpix_mod);
-    compare_tests.root_module.addIncludePath(b.path("reference"));
-    compare_tests.root_module.addCSourceFile(.{
-        .file = b.path("reference/ref_impl.c"),
-        .flags = &.{"-std=c99"},
-    });
-    compare_tests.root_module.link_libc = true;
+    linkStbReference(compare_tests, b, &.{"-std=c99"});
 
     const run_compare_tests = b.addRunArtifact(compare_tests);
 
-    // JPEG comparison tests (Zig vs C reference)
     const jpeg_tests = b.addTest(.{
         .name = "jpeg-compare-tests",
         .root_module = b.createModule(.{
@@ -102,16 +91,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
     jpeg_tests.root_module.addImport("zpix", zpix_mod);
-    jpeg_tests.root_module.addIncludePath(b.path("reference"));
-    jpeg_tests.root_module.addCSourceFile(.{
-        .file = b.path("reference/ref_impl.c"),
-        .flags = &.{"-std=c99"},
-    });
-    jpeg_tests.root_module.link_libc = true;
+    linkStbReference(jpeg_tests, b, &.{"-std=c99"});
 
     const run_jpeg_tests = b.addRunArtifact(jpeg_tests);
 
-    // JPEG encoder tests (round-trip, quality, C reference comparison)
     const jpeg_encode_tests = b.addTest(.{
         .name = "jpeg-encode-tests",
         .root_module = b.createModule(.{
@@ -121,12 +104,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     jpeg_encode_tests.root_module.addImport("zpix", zpix_mod);
-    jpeg_encode_tests.root_module.addIncludePath(b.path("reference"));
-    jpeg_encode_tests.root_module.addCSourceFile(.{
-        .file = b.path("reference/ref_impl.c"),
-        .flags = &.{"-std=c99"},
-    });
-    jpeg_encode_tests.root_module.link_libc = true;
+    linkStbReference(jpeg_encode_tests, b, &.{"-std=c99"});
     const run_jpeg_encode_tests = b.addRunArtifact(jpeg_encode_tests);
 
     // Separate test steps for better organization
@@ -162,7 +140,7 @@ pub fn build(b: *std.Build) void {
     const bulk_step = b.step("test-bulk", "Run bulk image load test against ~/RPG/Eberron/Images/");
     bulk_step.dependOn(&run_bulk_test.step);
 
-    // Benchmark executable (always ReleaseFast)
+    // Benchmark executable (always ReleaseFast, uses stb_image for comparison)
     const bench = b.addExecutable(.{
         .name = "bench",
         .root_module = b.createModule(.{
@@ -172,12 +150,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     bench.root_module.addImport("zpix", zpix_mod);
-    bench.root_module.addIncludePath(b.path("reference"));
-    bench.root_module.addCSourceFile(.{
-        .file = b.path("reference/ref_impl.c"),
-        .flags = &.{ "-std=c99", "-O2" },
-    });
-    bench.root_module.link_libc = true;
+    linkStbReference(bench, b, &.{ "-std=c99", "-O2" });
 
     b.installArtifact(bench);
 
@@ -224,4 +197,15 @@ pub fn build(b: *std.Build) void {
     });
     const docs_step = b.step("docs", "Generate API documentation");
     docs_step.dependOn(&install_docs.step);
+}
+
+/// Link the stb_image C reference implementation (reference/ref_impl.c).
+/// Used only for integration tests and benchmarks — not required by the library or CLI.
+fn linkStbReference(step: *std.Build.Step.Compile, b: *std.Build, flags: []const []const u8) void {
+    step.root_module.addIncludePath(b.path("reference"));
+    step.root_module.addCSourceFile(.{
+        .file = b.path("reference/ref_impl.c"),
+        .flags = flags,
+    });
+    step.root_module.link_libc = true;
 }
