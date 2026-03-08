@@ -6,6 +6,8 @@ This was written by AI.
 
 ## Documentation
 
+- **[Usage Guide](docs/USAGE.md)** - Library and CLI usage
+- **[Architecture](docs/ARCHITECTURE.md)** - Module structure and data flow
 - **[Coding Conventions](docs/CODING_CONVENTIONS.md)** - Zig conventions for this project
 - Generate API docs: `zig build docs` (outputs to `zig-out/docs/api`)
 
@@ -20,20 +22,20 @@ This was written by AI.
 
 ## Format Support
 
-### JPEG (decode only)
+### JPEG
 
-| Feature | Status |
-|---------|--------|
-| Baseline DCT (SOF0) | Yes |
-| Extended sequential DCT (SOF1) | Yes |
-| Progressive DCT (SOF2) | Yes ✓ |
-| Grayscale | Yes |
-| YCbCr 4:4:4, 4:2:2, 4:2:0 | Yes |
-| Restart markers (DRI) | Yes |
-| DC/AC refinement scans | Yes |
-| Arithmetic coding | No |
+| Feature | Decode | Encode |
+|---------|--------|--------|
+| Baseline DCT (SOF0) | Yes | Yes |
+| Extended sequential DCT (SOF1) | Yes | No |
+| Progressive DCT (SOF2) | Yes | No |
+| Grayscale | Yes | Yes |
+| YCbCr 4:4:4, 4:2:2, 4:2:0 | Yes | 4:4:4 only |
+| Restart markers (DRI) | Yes | No |
+| DC/AC refinement scans | Yes | N/A |
+| Arithmetic coding | No | No |
 
-Progressive JPEG support includes all scan types (DC/AC first and refinement scans) for pixel-perfect decoding.
+Progressive JPEG decoding includes all scan types (DC/AC first and refinement scans) for pixel-perfect output.
 
 ### PNG
 
@@ -47,6 +49,73 @@ Progressive JPEG support includes all scan types (DC/AC first and refinement sca
 | All filter types (None, Sub, Up, Average, Paeth) | Yes | None only |
 
 Not supported: palette/indexed color, 16-bit depth, 1/2/4-bit depth, ancillary chunks.
+
+## Library Usage
+
+### File-based API
+
+```zig
+const zpix = @import("zpix");
+
+// Load any image (auto-detects format by magic bytes)
+var image = try zpix.loadFile(allocator, "photo.jpg");
+defer image.deinit();
+
+// Or load a specific format
+var png_image = try zpix.loadPngFile(allocator, "image.png");
+defer png_image.deinit();
+
+// Crop
+var cropped = try image.crop(x, y, width, height);
+defer cropped.deinit();
+
+// Resize
+var resized = try image.resize(new_width, new_height);
+defer resized.deinit();
+
+// Save (auto-detects format by file extension)
+try zpix.saveFile(&resized, "output.png");
+try zpix.saveFile(&resized, "output.jpg");
+
+// Or save a specific format
+try zpix.savePngFile(&resized, "output.png");
+try zpix.saveJpegFile(&resized, "output.jpg", 90); // quality 1-100
+```
+
+### Memory API
+
+```zig
+const zpix = @import("zpix");
+
+// Load/save from memory buffers
+var image = try zpix.loadPngMemory(allocator, png_bytes);
+defer image.deinit();
+
+const png_output = try zpix.savePngMemory(allocator, &image);
+defer allocator.free(png_output);
+
+const jpeg_output = try zpix.saveJpegMemory(allocator, &image, 90);
+defer allocator.free(jpeg_output);
+```
+
+## CLI Usage
+
+```bash
+# Crop a region from an image
+zpix crop input.png output.png 100 100 200 200
+
+# Resize an image
+zpix resize input.png output.png 640 480
+
+# Create a square thumbnail (crops to center, then resizes)
+zpix thumbnail input.png thumb.png 128
+
+# Rotate image (90, 180, or 270 degrees clockwise)
+zpix rotate input.png output.png 90
+
+# Flip image (h = horizontal, v = vertical)
+zpix flip input.png output.png h
+```
 
 ## Building
 
@@ -129,62 +198,6 @@ test "PNG decoder produces same output as stb_image for RGB" {
 2. Create comparison test in `test/test_png.zig` or `test/test_jpeg.zig`
 3. Verify zpix output matches stb_image byte-for-byte
 
-## CLI Usage
-
-```bash
-# Crop a region from an image
-zpix crop input.png output.png 100 100 200 200
-
-# Resize an image
-zpix resize input.png output.png 640 480
-
-# Create a square thumbnail (crops to center, then resizes)
-zpix thumbnail input.png thumb.png 128
-
-# Rotate image (90, 180, or 270 degrees clockwise)
-zpix rotate input.png output.png 90
-
-# Flip image (h = horizontal, v = vertical)
-zpix flip input.png output.png h
-```
-
-## Library Usage
-
-### File-based API
-
-```zig
-const zpix = @import("zpix");
-
-// Load an image (JPEG or PNG)
-var image = try zpix.loadJpegFile(allocator, "photo.jpg");
-// or: var image = try zpix.loadPngFile(allocator, "image.png");
-defer image.deinit();
-
-// Crop
-var cropped = try image.crop(x, y, width, height);
-defer cropped.deinit();
-
-// Resize
-var resized = try image.resize(new_width, new_height);
-defer resized.deinit();
-
-// Save as PNG
-try zpix.savePngFile(&resized, "output.png");
-```
-
-### Memory API
-
-```zig
-const zpix = @import("zpix");
-
-// Load/save from memory buffers
-var image = try zpix.loadPngMemory(allocator, png_bytes);
-defer image.deinit();
-
-const output = try zpix.savePngMemory(allocator, &image);
-defer allocator.free(output);
-```
-
 ## Benchmarks
 
 Compare zpix performance against the C reference (stb_image):
@@ -203,4 +216,4 @@ The test fixture `landscape_600x400.png` is a photo of Cinque Terre, Italy, sour
 
 ## License
 
-Public domain (same as stb libraries)
+MIT License. See [MIT.txt](MIT.txt) for details.

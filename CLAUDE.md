@@ -18,6 +18,7 @@
 
 - `src/zpix.zig` - Main library entry point
 - `src/jpeg.zig` - JPEG decoder (baseline + progressive)
+- `src/jpeg_encoder.zig` - JPEG encoder (baseline)
 - `src/png.zig` - PNG decoder/encoder
 - `src/image.zig` - Image data structure
 - `src/decode_context.zig` - Shared PNG decoding context

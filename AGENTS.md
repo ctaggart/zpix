@@ -9,6 +9,7 @@ This file contains development instructions for AI agents, automated tools, and 
 - `zig build integration-test` - Run integration tests (vs stb_image)
 - `zig build test-all` - Run all tests (unit + integration)
 - `zig build bench` - Run performance benchmarks
+- `zig build docs` - Generate API documentation (outputs to zig-out/docs/api)
 - `zig build -Doptimize=ReleaseFast` - Build optimized
 
 ## Development Approach
@@ -19,9 +20,9 @@ This file contains development instructions for AI agents, automated tools, and 
 
 - `src/zpix.zig` - Main library entry point
 - `src/jpeg.zig` - JPEG decoder (baseline + progressive)
+- `src/jpeg_encoder.zig` - JPEG encoder (baseline)
 - `src/png.zig` - PNG decoder/encoder
 - `src/image.zig` - Image data structure
-- `src/streaming.zig` - Low-memory streaming operations
 - `src/decode_context.zig` - Shared PNG decoding context
 - `src/cli.zig` - Command-line interface
 
@@ -51,7 +52,7 @@ Test fixtures are in `test/fixtures/`.
 - Explicit error handling
 - Support custom allocators
 - Prefer `*const` for read-only pointer parameters
-- Use `const Self = @This()` for struct self-reference
+- Use `@This()` directly (see docs/CODING_CONVENTIONS.md)
 
 ### Variable Naming
 
