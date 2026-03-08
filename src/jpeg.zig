@@ -328,6 +328,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
             Marker.DQT => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                 const length = readU16(data, pos);
+                if (length < 2) return JpegError.InvalidQuantizationTable;
                 pos += 2;
                 var remaining = @as(usize, length) - 2;
                 while (remaining > 0) {
@@ -366,6 +367,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
             Marker.DHT => {
                 if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                 const length = readU16(data, pos);
+                if (length < 2) return JpegError.InvalidHuffmanTable;
                 pos += 2;
                 var remaining = @as(usize, length) - 2;
 
@@ -389,6 +391,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                     pos += 16;
                     remaining -= 16;
 
+                    if (total > 256) return JpegError.InvalidHuffmanTable;
                     if (pos + total > data.len) return JpegError.UnexpectedEndOfData;
                     const symbols = data[pos .. pos + total];
                     pos += total;
@@ -417,6 +420,10 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                 pos += 2;
                 width = readU16(data, pos);
                 pos += 2;
+
+                if (width == 0 or height == 0 or width > Image.MAX_DIMENSION or height > Image.MAX_DIMENSION)
+                    return JpegError.InvalidFrameHeader;
+
                 num_components = data[pos];
                 pos += 1;
 
@@ -439,6 +446,11 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         .ac_table = 0,
                         .dc_pred = 0,
                     };
+                    if (components[i].h_sample == 0 or components[i].h_sample > 4 or
+                        components[i].v_sample == 0 or components[i].v_sample > 4)
+                        return JpegError.InvalidFrameHeader;
+                    if (components[i].qt_id > 3)
+                        return JpegError.InvalidQuantizationTable;
                     if (components[i].h_sample > max_h) max_h = components[i].h_sample;
                     if (components[i].v_sample > max_v) max_v = components[i].v_sample;
                     pos += 3;
@@ -480,6 +492,8 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                         if (components[component_index].id == component_id) {
                             components[component_index].dc_table = huffman_table_selectors >> 4;
                             components[component_index].ac_table = huffman_table_selectors & 0x0F;
+                            if (components[component_index].dc_table > 3 or components[component_index].ac_table > 3)
+                                return JpegError.InvalidScanHeader;
                             scan_component_indices[scan_components_count] = @intCast(component_index);
                             scan_components_count += 1;
                             break;
@@ -493,6 +507,8 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                 pos += 1;
                 spectral_end = data[pos];
                 pos += 1;
+                if (spectral_start > 63 or spectral_end > 63 or spectral_start > spectral_end)
+                    return JpegError.InvalidScanHeader;
                 const successive_approx = data[pos];
                 pos += 1;
                 successive_approx_high = successive_approx >> 4;
@@ -581,6 +597,7 @@ fn decodeMemory(allocator: Allocator, data: []const u8) !Image {
                 if (Marker.isAPP(marker) or marker == Marker.COM or (marker >= 0xFFC0 and marker <= 0xFFFF)) {
                     if (pos + 2 > data.len) return JpegError.UnexpectedEndOfData;
                     const length = readU16(data, pos);
+                    if (@as(usize, length) > data.len - pos) return JpegError.UnexpectedEndOfData;
                     pos += @as(usize, length);
                 }
             },
@@ -653,6 +670,7 @@ fn decodeScanData(
 
                         const dc_ht = &dc_huffman_tables[comp.dc_table];
                         const dc_cat = try bits.decodeHuffman(dc_ht);
+                        if (dc_cat > 15) return JpegError.InvalidData;
                         if (dc_cat > 0) {
                             comp.dc_pred += bits.receiveExtend(@intCast(dc_cat));
                         }
@@ -1057,6 +1075,7 @@ fn decodeBlockProgDc(
     if (successive_approx_high == 0) {
         // DC first scan: decode differential DC coefficient
         const dc_category = try bits.decodeHuffman(dc_huffman_table);
+        if (dc_category > 15) return JpegError.InvalidData;
         if (dc_category > 0) {
             dc_predictor.* += bits.receiveExtend(@intCast(dc_category));
         }

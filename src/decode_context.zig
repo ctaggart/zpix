@@ -57,6 +57,7 @@ pub const PngDecodeContext = struct {
         var height: u32 = 0;
         var channels: u8 = 3;
         var interlace: u8 = 0;
+        var ihdr_found: bool = false;
         var idat_data: std.ArrayList(u8) = .empty;
         defer idat_data.deinit(allocator);
 
@@ -66,8 +67,12 @@ pub const PngDecodeContext = struct {
             const chunk_type = reader.takeArray(4) catch break;
 
             if (std.mem.eql(u8, chunk_type, &ChunkType.IHDR)) {
+                ihdr_found = true;
                 width = try reader.takeInt(u32, .big);
                 height = try reader.takeInt(u32, .big);
+                const Image = @import("image.zig");
+                if (width == 0 or height == 0) return DecodeError.InvalidImageData;
+                if (width > Image.MAX_DIMENSION or height > Image.MAX_DIMENSION) return DecodeError.InvalidImageData;
                 const bit_depth = try reader.takeByte();
                 const ct = try reader.takeByte();
                 const color_type = std.meta.intToEnum(ColorType, ct) catch return DecodeError.UnsupportedColorType;
@@ -111,12 +116,22 @@ pub const PngDecodeContext = struct {
             }
         }
 
+        if (!ihdr_found) return DecodeError.InvalidChunk;
+
         // Decompress IDAT data (zlib)
         // For non-interlaced, we know the exact decompressed size
         const expected_size: usize = if (interlace == 0)
             @as(usize, height) * (@as(usize, width) * @as(usize, channels) + 1)
-        else
-            0;
+        else blk: {
+            var total: usize = 0;
+            for (0..7) |pass| {
+                const pw = Adam7.passWidth(width, pass);
+                const ph = Adam7.passHeight(height, pass);
+                if (pw > 0 and ph > 0)
+                    total += @as(usize, ph) * (@as(usize, pw) * @as(usize, channels) + 1);
+            }
+            break :blk total;
+        };
         const raw_data = try decompressZlib(allocator, idat_data.items, expected_size);
         errdefer allocator.free(raw_data);
 

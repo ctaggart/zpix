@@ -1,3 +1,5 @@
+pub const MAX_DIMENSION: u32 = 16384;
+
 width: u32,
 height: u32,
 channels: u8,
@@ -5,6 +7,8 @@ data: []u8,
 allocator: Allocator,
 
 pub fn init(allocator: Allocator, width: u32, height: u32, channels: u8) !@This() {
+    if (width == 0 or height == 0 or width > MAX_DIMENSION or height > MAX_DIMENSION)
+        return error.InvalidImageDimensions;
     const size = @as(usize, width) * @as(usize, height) * @as(usize, channels);
     const data = try allocator.alloc(u8, size);
     @memset(data, 0);
@@ -39,7 +43,9 @@ pub fn setPixel(self: *@This(), x: u32, y: u32, pixel: []const u8) void {
 
 pub fn crop(self: *const @This(), x: u32, y: u32, crop_width: u32, crop_height: u32) !@This() {
     // Validate bounds
-    if (x + crop_width > self.width or y + crop_height > self.height) {
+    if (@as(u64, x) + @as(u64, crop_width) > @as(u64, self.width) or
+        @as(u64, y) + @as(u64, crop_height) > @as(u64, self.height))
+    {
         return error.CropOutOfBounds;
     }
     if (crop_width == 0 or crop_height == 0) {
@@ -563,6 +569,37 @@ test "flipVertical mirrors top-bottom" {
     try std.testing.expectEqualSlices(u8, &cyan, flipped.getPixel(1, 1));
     try std.testing.expectEqualSlices(u8, &red, flipped.getPixel(0, 2));
     try std.testing.expectEqualSlices(u8, &green, flipped.getPixel(1, 2));
+}
+
+test "init rejects zero width" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidImageDimensions, @This().init(allocator, 0, 10, 3));
+}
+
+test "init rejects zero height" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidImageDimensions, @This().init(allocator, 10, 0, 3));
+}
+
+test "init rejects oversized dimensions" {
+    const allocator = std.testing.allocator;
+    try std.testing.expectError(error.InvalidImageDimensions, @This().init(allocator, MAX_DIMENSION + 1, 10, 3));
+    try std.testing.expectError(error.InvalidImageDimensions, @This().init(allocator, 10, MAX_DIMENSION + 1, 3));
+}
+
+test "init accepts max dimensions" {
+    const allocator = std.testing.allocator;
+    var img = try @This().init(allocator, 64, 64, 1);
+    defer img.deinit();
+    try std.testing.expectEqual(@as(u32, 64), img.width);
+}
+
+test "crop detects u32 overflow" {
+    const allocator = std.testing.allocator;
+    var img = try @This().init(allocator, 10, 10, 3);
+    defer img.deinit();
+    try std.testing.expectError(error.CropOutOfBounds, img.crop(0xFFFFFFFF, 0, 2, 2));
+    try std.testing.expectError(error.CropOutOfBounds, img.crop(0, 0, 0xFFFFFFFF, 2));
 }
 
 const std = @import("std");

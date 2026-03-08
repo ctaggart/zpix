@@ -455,6 +455,9 @@ fn writeSOS(writer: *std.Io.Writer, num_components: u8) !void {
 }
 
 fn encode(_: Allocator, img: *const Image, writer: *std.Io.Writer, quality: u8) !void {
+    if (img.channels == 0 or img.channels == 2) return error.UnsupportedChannelCount;
+    if (img.width == 0 or img.height == 0 or img.width > 65535 or img.height > 65535)
+        return error.InvalidImageDimensions;
 
     const clamped_quality = if (quality == 0) @as(u8, 1) else quality;
 
