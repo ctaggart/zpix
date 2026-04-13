@@ -234,15 +234,15 @@ const BitReader = struct {
 };
 
 /// Load JPEG from file path
-pub fn loadFromFile(allocator: Allocator, path: []const u8) !Image {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
+pub fn loadFromFile(allocator: Allocator, path: []const u8, io: std.Io) !Image {
+    const file = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer file.close(io);
 
-    const stat = try file.stat();
-    const data = try allocator.alloc(u8, stat.size);
+    const stat = try file.stat(io);
+    const data = try allocator.alloc(u8, @intCast(stat.size));
     defer allocator.free(data);
 
-    _ = try file.readAll(data);
+    _ = try file.readPositionalAll(io, data, 0);
     return decodeMemory(allocator, data);
 }
 
